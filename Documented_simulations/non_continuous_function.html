@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>esurf — non_continuous_function</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0A0A1A; }
+    canvas { display: block; width: 100%; height: 100%; }
+
+    #info {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      color: #C8C8E8;
+      background: rgba(10,10,26,0.80);
+      border: 1px solid #2A2A4A;
+      border-radius: 6px;
+      padding: 14px 16px;
+      max-width: 300px;
+      line-height: 1.8;
+    }
+    #info h1 { font-size: 13px; color: #00FFCC; margin-bottom: 10px; letter-spacing: 0.05em; }
+    #info .param { color: #666680; }
+    #info .val   { color: #C8C8E8; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+
+  <div id="info">
+    <h1>non_continuous_function</h1>
+    <div><span class="param">A </span><span class="val">5 &nbsp;&nbsp; B1 </span><span class="val">1.2 &nbsp; B2 </span><span class="val">0.3</span></div>
+    <div><span class="param">kθ </span><span class="val">3 &nbsp;&nbsp; kφ </span><span class="val">2</span></div>
+    <div><span class="param">ω </span><span class="val">0.8 &nbsp; ω2 </span><span class="val">0.4 &nbsp; δ </span><span class="val">0</span></div>
+    <div><span class="param">N </span><span class="val">0.5 &nbsp; nScale </span><span class="val">1</span></div>
+    <div><span class="param">φ </span><span class="val">[0.1, π] &nbsp; phiRes </span><span class="val">60</span></div>
+    <div><span class="param">θRes </span><span class="val">80 &nbsp; thetaSlice </span><span class="val">π/6</span></div>
+    <div style="margin-top:8px; color:#444460; font-size:10px;">drag to orbit · scroll to zoom</div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // ── Params (snapshot of defaults at time of export) ──────────────────────
+    const P = {
+      A:7, B1:1.2, B2:0.3, kTheta:3, kPhi:2,
+      omega:0.8, omega2:0.4, delta:0,
+      N:0.5, nScale:1,
+      sx:1, sy:1, sz:1,
+      phiMin:0.1, phiMax:Math.PI,
+      thetaRes:80, phiRes:60,
+      timeScale:1,
+      thetaSlice:0, thetaSliceOffset:Math.PI/6,
+    };
+
+    // ── Noise ─────────────────────────────────────────────────────────────────
+    function hash(ix, iy, iz) {
+      let h = ((ix * 1619) ^ (iy * 31337) ^ (iz * 6271)) | 0;
+      h = ((h ^ (h >>> 16)) * 0x45d9f3b) | 0;
+      h = ((h ^ (h >>> 16)) * 0x45d9f3b) | 0;
+      h = (h ^ (h >>> 16)) | 0;
+      return (h & 0xffff) / 32767.5 - 1.0;
+    }
+    function fade(t) { return t * t * (3 - 2 * t); }
+    function lerp(a, b, t) { return a + t * (b - a); }
+    function noise(x, y, z) {
+      const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
+      const fx = x-ix, fy = y-iy, fz = z-iz;
+      const ux = fade(fx), uy = fade(fy), uz = fade(fz);
+      return lerp(
+        lerp(lerp(hash(ix,iy,iz),   hash(ix+1,iy,iz),   ux), lerp(hash(ix,iy+1,iz),   hash(ix+1,iy+1,iz),   ux), uy),
+        lerp(lerp(hash(ix,iy,iz+1), hash(ix+1,iy,iz+1), ux), lerp(hash(ix,iy+1,iz+1), hash(ix+1,iy+1,iz+1), ux), uy),
+        uz
+      );
+    }
+
+    // ── Parametric surface ────────────────────────────────────────────────────
+    function computeRadius(theta, phi, t, p) {
+      const period = (2 * Math.PI) / Math.max(p.omega, p.omega2, 0.001);
+      const tc = t % period;
+      return p.A
+        + p.B1 * Math.sin(p.kTheta*theta + p.kPhi*phi - p.omega*tc  + p.delta)
+        + p.B2 * Math.sin(2*p.kTheta*theta - p.omega2*tc)
+        + p.N  * noise(p.nScale*theta, p.nScale*phi, tc);
+    }
+    function computePoint(theta, phi, t, p) {
+      const r = computeRadius(theta, phi, t, p);
+      const sp = Math.sin(phi), cp = Math.cos(phi);
+      const st = Math.sin(theta), ct = Math.cos(theta);
+      return [p.sx*r*sp*ct, p.sy*r*sp*st, p.sz*r*cp];
+    }
+
+    // ── Scene setup ───────────────────────────────────────────────────────────
+    const canvas   = document.getElementById('c');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+    renderer.setClearColor(0x0a0a1a);
+
+    const scene  = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0a1a);
+
+    const aspect = canvas.clientWidth / canvas.clientHeight;
+    const camera = new THREE.PerspectiveCamera(60, aspect, 0.1, 1000);
+    camera.up.set(0, 0, 1);
+    camera.position.set(16, -16, 12);
+    camera.lookAt(0, 0, 0);
+
+    const controls = new OrbitControls(camera, canvas);
+    controls.enableDamping  = true;
+    controls.dampingFactor  = 0.05;
+
+    const group = new THREE.Group();
+    scene.add(group);
+
+    // ── Ocean floor disc ──────────────────────────────────────────────────────
+    const CONE_DIVS = 128, CONE_R = 15;
+    const conePos = new Float32Array((CONE_DIVS + 1) * 3);
+    for (let i = 0; i < CONE_DIVS; i++) {
+      const t = (i / CONE_DIVS) * Math.PI * 2;
+      conePos[(i+1)*3]   = CONE_R * Math.cos(t);
+      conePos[(i+1)*3+1] = CONE_R * Math.sin(t);
+      conePos[(i+1)*3+2] = 0;
+    }
+    const coneGeo = new THREE.BufferGeometry();
+    coneGeo.setAttribute('position', new THREE.BufferAttribute(conePos, 3));
+    const coneIdx = new Uint16Array(CONE_DIVS * 3);
+    for (let i = 0; i < CONE_DIVS; i++) {
+      coneIdx[i*3] = 0; coneIdx[i*3+1] = i+1; coneIdx[i*3+2] = (i+1)%CONE_DIVS+1;
+    }
+    coneGeo.setIndex(new THREE.BufferAttribute(coneIdx, 1));
+    const coneMesh = new THREE.Mesh(coneGeo, new THREE.MeshBasicMaterial({
+      color:0x1a4a9f, transparent:true, opacity:0.18, side:THREE.DoubleSide, depthWrite:false,
+    }));
+    coneMesh.renderOrder = -1;
+    group.add(coneMesh);
+
+    // ── Point cloud ───────────────────────────────────────────────────────────
+    const MAX_PTS  = 250 * 250;
+    const posBuf   = new Float32Array(MAX_PTS * 3);
+    const colBuf   = new Float32Array(MAX_PTS * 3);
+    const geo      = new THREE.BufferGeometry();
+    const posAttr  = new THREE.BufferAttribute(posBuf, 3);
+    const colAttr  = new THREE.BufferAttribute(colBuf, 3);
+    posAttr.setUsage(THREE.DynamicDrawUsage);
+    colAttr.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('position', posAttr);
+    geo.setAttribute('color',    colAttr);
+    geo.setDrawRange(0, 0);
+    const pts = new THREE.Points(geo, new THREE.PointsMaterial({
+      vertexColors:true, size:0.08, sizeAttenuation:true, transparent:true, opacity:0.85,
+    }));
+    group.add(pts);
+
+    // ── Slice arc ─────────────────────────────────────────────────────────────
+    const MAX_SLICE  = 500;
+    const rawArc     = new Float32Array(400 * 3);
+    const sliceBuf   = new Float32Array(MAX_SLICE * 3);
+    const sliceAttr  = new THREE.BufferAttribute(sliceBuf, 3);
+    sliceAttr.setUsage(THREE.DynamicDrawUsage);
+    const sliceGeo   = new THREE.BufferGeometry();
+    sliceGeo.setAttribute('position', sliceAttr);
+    sliceGeo.setDrawRange(0, 0);
+    const sliceLine  = new THREE.Line(sliceGeo, new THREE.LineBasicMaterial({
+      color:0xffd060, transparent:true, opacity:0.9,
+    }));
+    group.add(sliceLine);
+
+    // ── Surface update ────────────────────────────────────────────────────────
+    function updateSurface(t) {
+      const { phiMin, phiMax, thetaRes, phiRes } = P;
+      const dTheta = (Math.PI * 2) / thetaRes;
+      const dPhi   = (phiMax - phiMin) / (phiRes - 1);
+      const count  = Math.min(thetaRes * phiRes, MAX_PTS);
+      let idx = 0, cx = 0, cy = 0, cz = 0;
+      for (let ti = 0; ti < thetaRes; ti++) {
+        const theta = ti * dTheta;
+        for (let pi = 0; pi < phiRes; pi++) {
+          const phi = phiMin + pi * dPhi;
+          const [x, y, z] = computePoint(theta, phi, t, P);
+          posBuf[idx*3]   = x; posBuf[idx*3+1] = y; posBuf[idx*3+2] = z;
+          const dim = z > 0 ? 1.0 : 0.12;
+          colBuf[idx*3]   = 0.00*dim; colBuf[idx*3+1] = 1.00*dim; colBuf[idx*3+2] = 0.80*dim;
+          cx += x; cy += y; cz += z;
+          idx++;
+        }
+      }
+      posAttr.needsUpdate = true;
+      colAttr.needsUpdate = true;
+      geo.setDrawRange(0, count);
+      cx /= count; cy /= count; cz /= count;
+      group.position.set(-cx, -cy, -cz);
+    }
+
+    // ── Slice arc update ──────────────────────────────────────────────────────
+    const INTERP_STEPS = 12;
+    function updateSliceArc(t) {
+      const { phiMin, phiRes, thetaSlice, thetaSliceOffset } = P;
+      const theta  = thetaSlice + thetaSliceOffset;
+      const thetaB = theta + Math.PI;
+      const phiMax = Math.PI / 2;
+      const dPhi   = (phiMax - phiMin) / (phiRes - 1);
+      const n      = phiRes * 2;
+      for (let i = 0; i < phiRes; i++) {
+        const [x,y,z] = computePoint(theta,  phiMin + i*dPhi, t, P);
+        rawArc[i*3]   = x; rawArc[i*3+1]   = y; rawArc[i*3+2]   = z;
+      }
+      for (let i = 0; i < phiRes; i++) {
+        const [x,y,z] = computePoint(thetaB, phiMax - i*dPhi, t, P);
+        rawArc[(phiRes+i)*3]   = x; rawArc[(phiRes+i)*3+1]   = y; rawArc[(phiRes+i)*3+2]   = z;
+      }
+      // Gap fill
+      let totalD2 = 0;
+      for (let i = 0; i < n-1; i++) {
+        const dx=rawArc[(i+1)*3]-rawArc[i*3], dy=rawArc[(i+1)*3+1]-rawArc[i*3+1], dz=rawArc[(i+1)*3+2]-rawArc[i*3+2];
+        totalD2 += dx*dx+dy*dy+dz*dz;
+      }
+      const thr2 = (totalD2/(n-1))*9;
+      let out = 0;
+      function interp(ai, bx, by, bz) {
+        const ax=rawArc[ai*3],ay=rawArc[ai*3+1],az=rawArc[ai*3+2];
+        const dx=bx-ax,dy=by-ay,dz=bz-az;
+        if (dx*dx+dy*dy+dz*dz > thr2) {
+          for (let s=1; s<=INTERP_STEPS; s++) {
+            const u=s/(INTERP_STEPS+1);
+            sliceBuf[out*3]=ax+dx*u; sliceBuf[out*3+1]=ay+dy*u; sliceBuf[out*3+2]=az+dz*u; out++;
+          }
+        }
+      }
+      for (let i = 0; i < n; i++) {
+        sliceBuf[out*3]=rawArc[i*3]; sliceBuf[out*3+1]=rawArc[i*3+1]; sliceBuf[out*3+2]=rawArc[i*3+2]; out++;
+        if (i < n-1) interp(i, rawArc[(i+1)*3], rawArc[(i+1)*3+1], rawArc[(i+1)*3+2]);
+      }
+      interp(n-1, rawArc[0], rawArc[1], rawArc[2]);
+      sliceBuf[out*3]=rawArc[0]; sliceBuf[out*3+1]=rawArc[1]; sliceBuf[out*3+2]=rawArc[2]; out++;
+      sliceAttr.needsUpdate = true;
+      sliceGeo.setDrawRange(0, out);
+    }
+
+    // ── Resize ────────────────────────────────────────────────────────────────
+    new ResizeObserver(() => {
+      const w = canvas.clientWidth, h = canvas.clientHeight;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }).observe(canvas);
+
+    // ── Animation loop ────────────────────────────────────────────────────────
+    let simTime = 0, last = 0;
+    function loop(ts) {
+      const dt = Math.min((ts - last) / 1000, 0.05);
+      last = ts;
+      simTime += dt * P.timeScale;
+      updateSurface(simTime);
+      updateSliceArc(simTime);
+      controls.update();
+      renderer.render(scene, camera);
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(ts => { last = ts; requestAnimationFrame(loop); });
+  </script>
+</body>
+</html>
