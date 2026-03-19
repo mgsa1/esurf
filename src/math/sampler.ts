@@ -24,7 +24,8 @@ import type { WaveParams, SurfaceData } from '../types';
 export function sampleSurface(
   params: WaveParams,
   t: number,
-  buffer: Float32Array
+  buffer: Float32Array,
+  wave2AlphaFn?: (x: number, y: number) => number,
 ): SurfaceData {
   const { gridRes, gridExtent } = params;
   const step = (2 * gridExtent) / (gridRes - 1);
@@ -34,9 +35,10 @@ export function sampleSurface(
     const x = -gridExtent + xi * step;
     for (let yi = 0; yi < gridRes; yi++) {
       const y = -gridExtent + yi * step;
+      const alpha = wave2AlphaFn !== undefined ? wave2AlphaFn(x, y) : undefined;
       buffer[idx++] = x;
       buffer[idx++] = y;
-      buffer[idx++] = surfaceZ(x, y, params, t);
+      buffer[idx++] = surfaceZ(x, y, params, t, alpha);
     }
   }
 
