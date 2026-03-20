@@ -73,8 +73,9 @@ export type SurfaceData = Float32Array;
  * onSurface: true when in contact with the wave floor
  *
  * Physics regimes:
- *   onSurface = true  → constrained to wave floor, slope-based gravity, wave lift applied
- *   onSurface = false → airborne, only gravity (az = −g)
+ *   onSurface = true,  isGrinding = false → slope-based gravity drives lateral motion
+ *   onSurface = true,  isGrinding = true  → locked to wave crest, sliding along lip
+ *   onSurface = false, isGrinding = false → airborne, only gravity (az = −g)
  */
 export interface PlayerState {
   worldX: number;
@@ -82,6 +83,8 @@ export interface PlayerState {
   vx: number;
   vz: number;
   onSurface: boolean;
+  /** True while the surfer is grinding along a wave crest (lip slide). */
+  isGrinding: boolean;
 }
 
 /**
