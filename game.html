@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>esurf</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0D0A1A;
+    }
+
+    /* Full-viewport flex container to center the canvas */
+    #canvas-wrapper {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Canvas: 480×270 internal, scaled to fill viewport while preserving aspect ratio */
+    #game-canvas {
+      width: 100vw;
+      height: 100vh;
+      object-fit: contain;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      display: block;
+    }
+
+    /* HUD overlay — positioned over the canvas, pointer-events off by default */
+    #hud {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    /* HUD pill style */
+    .hud-pill {
+      position: absolute;
+      top: 12px;
+      font-family: 'Press Start 2P', monospace;
+      padding: 4px 8px;
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #FFFFFF;
+      white-space: nowrap;
+    }
+
+    #hud-title {
+      left: 12px;
+      font-size: 10px;
+    }
+
+    #hud-visualizer {
+      right: 12px;
+      font-size: 8px;
+      pointer-events: auto;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    #hud-visualizer:hover {
+      background: rgba(0, 255, 204, 0.15);
+      border-color: rgba(0, 255, 204, 0.4);
+    }
+
+    #hud-controls {
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Press Start 2P', monospace;
+      font-size: 7px;
+      color: rgba(255, 255, 255, 0.4);
+      white-space: nowrap;
+    }
+
+    /* Mobile notice */
+    #mobile-notice {
+      display: none;
+      position: absolute;
+      inset: 0;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.75);
+      font-family: 'Press Start 2P', monospace;
+      font-size: 8px;
+      color: #FFFFFF;
+      text-align: center;
+      padding: 24px;
+      line-height: 2;
+      pointer-events: none;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+  <div id="canvas-wrapper">
+    <canvas id="game-canvas"></canvas>
+
+    <div id="hud">
+      <span class="hud-pill" id="hud-title">esurf</span>
+      <a class="hud-pill" id="hud-visualizer" href="/">Open Visualizer →</a>
+      <div id="hud-controls">← → SPACE</div>
+    </div>
+
+    <div id="mobile-notice">
+      Desktop only<br>use arrow keys + space
+    </div>
+  </div>
+
+  <script>
+    // Show mobile notice on small screens
+    if (window.innerWidth < 768) {
+      document.getElementById('mobile-notice').style.display = 'flex';
+    }
+  </script>
+
+  <script type="module" src="/src/game/main.ts"></script>
+</body>
+</html>

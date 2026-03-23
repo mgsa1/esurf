@@ -4,8 +4,8 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        game: 'index.html',
-        visualizer: 'visualizer.html',
+        visualizer: 'index.html',
+        game: 'game.html',
       },
     },
   },
