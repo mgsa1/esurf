@@ -1,128 +1,205 @@
 # esurf
 
-A browser-based surf game built on a real-time 3D parametric wave surface.
+A tunable ocean surface you can surf. Design a wave in 3D, then ride it.
 
-The player surfs a 2D wave derived from a user-defined 3D function — tweak the math live, see the wave change instantly.
+Two pages share state via localStorage:
+
+- **Game** (`/`) — 2D pixel art surf game. Half-pipe physics on a trochoidal wave cross-section.
+- **Visualizer** (`/visualizer.html`) — 3D interactive wave surface with sliders, dual-wave interference, and a first-person SURF mode.
 
 ---
 
-## Local setup
+## Setup
 
 ```
 npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` for the game, `http://localhost:5173/visualizer.html` for the 3D visualizer.
+Open `http://localhost:5173` for the game, `http://localhost:5173/visualizer.html` for the visualizer.
 
 ---
 
-## The parametric equation
+## Wave math
 
-The 3D surface is defined by a spherical-coordinate radius field:
-
-```
-r(θ, φ, t) = A
-           + B1 * sin(kTheta*θ + kPhi*φ - omega*t + delta)
-           + B2 * sin(2*kTheta*θ - omega2*t)
-           + N  * noise(nScale*θ, nScale*φ, t)
-```
-
-Then the Cartesian point is:
+The surface uses trochoidal (Gerstner) waves with deep-water dispersion:
 
 ```
-x = sx * r * sin(φ) * cos(θ)
-y = sy * r * sin(φ) * sin(θ)
-z = sz * r * cos(φ)
+k = 2π / wavelength
+ω = speedFactor · √(9.81 · k)
 ```
 
-**Each parameter in plain English:**
+Two independent circular wave sources are superposed:
 
-| Param | Meaning |
-|-------|---------|
-| A | Base radius — how big the surface is overall |
-| B1 | Primary wave amplitude — height of the main wave |
-| B2 | Secondary harmonic amplitude — adds a secondary ripple on top |
-| kTheta | Frequency along θ — how many wave crests wrap around the equator |
-| kPhi | Frequency along φ — how waves vary pole-to-pole |
-| omega | Primary animation speed — how fast the wave travels (rad/s) |
-| omega2 | Secondary animation speed — speed of the secondary harmonic |
-| delta | Phase offset — shifts the wave pattern without changing shape |
-| N | Noise amplitude — how much random turbulence is added |
-| nScale | Noise spatial scale — higher = finer-grained turbulence |
-| sx/sy/sz | Axis stretch factors — squeeze or elongate the surface on each axis |
-| thetaMin/Max | θ range — how much of the sphere to sample (0–2π = full circle) |
-| phiMin/Max | φ range — vertical extent (0.1–π-0.1 avoids degenerate poles) |
-| thetaRes/phiRes | Sampling resolution — more samples = smoother surface, more CPU |
-| timeScale | Simulation speed multiplier — 0 freezes, 2 doubles speed |
-| phiBase | Center angle for the gameplay slice (π/4 = 45° from top) |
-| phiAmp | How much the slice angle oscillates over time |
-| phiSpeed | Speed of slice oscillation |
-| phiPhase | Phase offset of slice oscillation |
-| phiMinSafe/MaxSafe | Clamp limits to keep the slice away from degenerate poles |
+```
+z₁(x, y, t) = A₁ · cos(k₁ · r₁ − ω₁·t)       r₁ = √(x² + y²)
+z₂(x, y, t) = A₂ · cos(k₂ · r₂ − ω₂·t)       r₂ = √((x − ox)² + (y − oy)²)
+
+Total surface: z = z₁ + z₂
+```
+
+Where crests align you get constructive interference (tall wave). Where a crest meets a trough, destructive interference (calm water).
+
+### Parameters
+
+| Parameter | Range | Meaning |
+|-----------|-------|---------|
+| `amplitude` | 0.5–8 | Wave 1 height |
+| `wavelength` | 5–60 | Spatial period |
+| `speedFactor` | 0.1–3 | Multiplier on dispersion-derived speed |
+| `timeScale` | 0–2 | Simulation speed (0 = frozen) |
+| `planeOffset` | 0–30 | Distance of the 2D game plane from origin along y-axis |
+| `spawnX` / `spawnY` | ±30 | Player spawn position in SURF mode |
+| `gridRes` | 40–200 | 3D visualizer resolution per axis |
+| `gridExtent` | 10–250 | 3D grid half-width in world units |
+| `wave2Enabled` | bool | Enable second wave source |
+| `wave2OriginX/Y` | ±50 | Origin of wave 2 |
+| `wave2Amplitude` | 0–8 | Height of wave 2 |
+| `wave2Wavelength` | 5–60 | Wavelength of wave 2 |
+| `wave2SpeedFactor` | 0.1–3 | Speed of wave 2 |
 
 ---
 
 ## 3D → 2D mapping
 
-The gameplay wave is a 2D parametric XZ cross-section from a time-varying φ-slice:
+The game slices the 3D surface at `y = planeOffset`, producing a 2D wave profile:
 
 ```
-φ_slice(t) = clamp(phiBase + phiAmp * sin(phiSpeed * t + phiPhase), phiMinSafe, phiMaxSafe)
+z_game(x, t) = surfaceZ(x, planeOffset, params, t)
 ```
 
-For each θ sample, we compute `x(θ,t)` and `z(θ,t)` from the 3D surface:
-```
-(x, _, z) = computePoint(θ, φ_slice(t), t, params)
-```
+Slope is computed analytically (chain rule on the circular wave):
 
-The resulting curve `(x[i], z[i])` is the gameplay wave.
-
-Local slope is derived as `dz/dx` from neighboring samples:
 ```
-slope[i] = (z[i+1] - z[i-1]) / (x[i+1] - x[i-1])
+dz/dx = −A · k · (x / r) · sin(k·r − ω·t)     where r = √(x² + D²)
 ```
 
-The slope drives physics: the surfer accelerates downhill and decelerates uphill.
+This slope is the authoritative incline that drives the surfer's gravity physics. Wave 2 contributions are added by superposition.
 
-This mapping is isolated in `src/math/waveExtractor.ts` — replace `computePhiSlice` and `extract2DWave` to swap in a different projection strategy.
+---
+
+## Game physics
+
+The surfer is a point mass constrained to the wave floor. No engine — all speed builds from slope gravity and wave energy.
+
+**Three states:**
+
+| State | Trigger | Physics |
+|-------|---------|---------|
+| **Riding** | On surface | Slope gravity: `ax = −g · slope / √(1 + slope²)`. Weight-shift lean (← →) offsets effective slope ±0.20. Surface drag 0.97/s. |
+| **Grinding** | At wave crest, \|slope\| < 0.12, \|vx\| > 1.5 | Locked to crest ridge. Heavy friction (0.85/s) bleeds speed. Exits when speed drops below 0.3. |
+| **Airborne** | Jump or auto-launch | Pure gravity (9.81 m/s²). Subtle air steering (±0.6 m/s²). Lands when z returns to wave surface. |
+
+**Jump:** Space gives a speed-scaled impulse (5 + \|vx\| × 0.35, capped at 11 m/s).
+
+**Auto-launch:** If the wave rises faster than 2.5 m/s under a surfer moving faster than 3 m/s, the wave tosses them airborne.
+
+**Wave lift:** `dz/dt` — when a crest rises under you, the floor imparts upward velocity. This is the core energy source.
+
+---
+
+## Visualizer SURF mode
+
+The SURF button on the visualizer enters a third-person game mode directly on the 3D wave mesh.
+
+**State machine:** PADDLING → RIDING → AIRBORNE → WIPEOUT → PADDLING
+
+| Key | Action |
+|-----|--------|
+| `A` / `D` | Carve (riding) / spin (air) / rudder (paddling) |
+| `W` | Pump (riding) / paddle (paddling) |
+| `S` | Brake |
+| `Space` | Jump off lip |
+| `R` | Respawn |
+| `Esc` | Exit surf mode |
+
+Physics: rail-energy model with speed-squared drag, wave face coupling, and pump timing. The wave provides energy; the player times and directs it. Camera follows with spring-damper smoothing and speed-responsive FOV.
+
+Entering SURF mode switches to a sunset theme (warm orange sky, solid ocean surface, retro grid floor).
 
 ---
 
 ## Controls
 
+### Game page (`/`)
+
 | Key | Action |
 |-----|--------|
-| `←` Arrow Left | Move left |
-| `→` Arrow Right | Move right |
+| `←` / `→` | Weight-shift lean |
 | `Space` | Jump |
 
+### Visualizer page (`/visualizer.html`)
+
+| Input | Action |
+|-------|--------|
+| Sliders | Adjust wave parameters in real-time |
+| Preset buttons | Load gentleSwell, surfBreak, or stormWave |
+| Mouse drag/scroll | Orbit and zoom the 3D view |
+| SURF button | Enter first-person surf mode |
+| DEV LOG button | Toggle development roadmap panel |
+
 ---
 
-## Performance notes
+## Presets
 
-- **Pre-allocated buffers**: `sampleSurface` writes into a caller-provided `Float32Array` — zero GC in the hot loop.
-- **BufferAttribute.needsUpdate**: Three.js is told about position changes via `needsUpdate = true` + `setDrawRange`. The geometry is never rebuilt.
-- **480×270 canvas**: The game runs at a low internal resolution and is CSS-upscaled with `image-rendering: pixelated` — cheap to render, sharp pixel art look.
-- **Value noise**: Deterministic 3D hash-based noise (~10 multiply/adds per call) — no lookup tables, no dependencies.
-- **Debounce**: The visualizer debounces surface recomputes by 50ms when `thetaRes × phiRes > 10,000` to keep the UI responsive at high resolutions.
+| Name | Amplitude | Wavelength | Speed | Feel |
+|------|-----------|-----------|-------|------|
+| **gentleSwell** | 1.0 | 30 | 0.8 | Long, slow rolling ocean |
+| **surfBreak** | 2.5 | 15 | 1.0 | Classic beach break |
+| **stormWave** | 5.0 | 10 | 1.4 | Fast, powerful, steep |
 
 ---
 
-## How to add a new parametric equation
+## Performance
 
-1. In `src/math/parametric.ts`, add a new function:
-   ```ts
-   export function computeRadiusMyShape(theta: number, phi: number, t: number, params: WaveParams): number {
-     // your equation here
-   }
-   ```
+- **Pre-allocated buffers** — `sampleSurface` writes into a caller-provided `Float32Array`. Zero GC in the hot loop.
+- **BufferAttribute.needsUpdate** — geometry is never rebuilt. Position and color buffers are updated in-place with `DynamicDrawUsage`.
+- **480×270 canvas** — game runs at low internal resolution, CSS-upscaled with `image-rendering: pixelated`.
+- **Analytical derivatives** — slope (`dz/dx`) and wave lift (`dz/dt`) are closed-form, not numerical.
+- **Debounce** — visualizer debounces recomputes by 50ms when `gridRes > 120`.
 
-2. Add a new `Preset` to `src/presets.ts`:
-   ```ts
-   preset('myShape', { A: 4, B1: 1, ... })
-   ```
+---
 
-3. To make it selectable in the visualizer, the preset will automatically appear in the presets row.
+## Project structure
 
-For a completely different surface parameterization, replace `computePoint` in `src/math/parametric.ts` and update `extract2DWave` in `src/math/waveExtractor.ts` accordingly.
+```
+src/
+├── types.ts                  # WaveParams, PlayerState, Preset
+├── presets.ts                # 3 wave presets
+├── store/
+│   └── params.ts             # localStorage read/write with fallback
+├── math/
+│   ├── trochoidal.ts         # Wave equation, slope, time derivative, 2D sampling
+│   └── sampler.ts            # 3D grid sampling for visualizer
+├── game/
+│   ├── main.ts               # Game loop
+│   ├── player.ts             # Half-pipe surf physics
+│   ├── renderer2d.ts         # Canvas 2D pixel art rendering
+│   └── controls.ts           # Keyboard input
+└── visualizer/
+    ├── main.ts               # Visualizer loop, wave 2 propagation
+    ├── renderer3d.ts         # Three.js scene, mesh, themes
+    ├── uiControls.ts         # Slider panel, presets
+    └── gameMode.ts           # Third-person SURF mode
+```
+
+---
+
+## Adding a new wave equation
+
+1. Add a new function in `src/math/trochoidal.ts` matching the `surfaceZ` signature.
+2. Add a `Preset` to `src/presets.ts` — it will appear automatically in the visualizer.
+3. If the equation changes the derivative structure, update `surfaceSlope` and `surfaceZdot` to match.
+
+---
+
+## Tech stack
+
+| | |
+|-|-|
+| Build | Vite (multi-page) |
+| Language | TypeScript (strict) |
+| 3D | Three.js r170 |
+| 2D | Canvas 2D API |
+| State | localStorage |
+| Font | Press Start 2P |
