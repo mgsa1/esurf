@@ -41,6 +41,10 @@ export interface WaveParams {
   gridExtent: number;
   /** Distance of the 2D game plane from the origin along the y-axis (0–30). */
   planeOffset: number;
+  /** World-space X spawn coordinate for first-person game mode (-30–30). */
+  spawnX: number;
+  /** World-space Y spawn coordinate for first-person game mode (-30–30). */
+  spawnY: number;
 
   // ---- Wave 2 (secondary, configurable origin) ----
   /** Enable the second wave source. When false, wave 2 contributes nothing. */

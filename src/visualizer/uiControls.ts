@@ -35,10 +35,17 @@ const GROUPS: Array<{ label: string; sliders: SliderConfig[] }> = [
     ],
   },
   {
+    label: 'GAME',
+    sliders: [
+      { key: 'spawnX', label: 'spawn X', min: -29, max: 29, step: 0.5, desc: 'player spawn X position (-29–29)' },
+      { key: 'spawnY', label: 'spawn Y', min: -29, max: 29, step: 0.5, desc: 'player spawn Y position (-29–29)' },
+    ],
+  },
+  {
     label: 'SAMPLING',
     sliders: [
       { key: 'gridRes',    label: 'gridRes',    min: 40,  max: 200, step: 10,  desc: '3D grid resolution per axis (40–200)' },
-      { key: 'gridExtent', label: 'gridExtent', min: 10,  max: 50,  step: 1,   desc: '3D grid half-width in world units (10–50)' },
+      { key: 'gridExtent', label: 'gridExtent', min: 10,  max: 250, step: 1,   desc: '3D grid half-width in world units (10–250)' },
     ],
   },
 ];
@@ -312,6 +319,7 @@ export function initControls(
       );
       rangeInputs.set(key, rangeEl);
       numInputs.set(key, numEl);
+      if (key === 'planeOffset') row.style.display = 'none';
       body.appendChild(row);
     });
 

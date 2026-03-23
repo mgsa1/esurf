@@ -9,6 +9,7 @@ import { loadParams, saveParams } from '../store/params';
 import { sampleSurface } from '../math/sampler';
 import { wave2PhaseVelocity } from '../math/trochoidal';
 import { init, update, updateGamePlane, updateOriginMarkers, render } from './renderer3d';
+import { enterGameMode, exitGameMode, isGameModeActive, updateGameMode, respawnPlayer } from './gameMode';
 import { initControls, initTimeControl } from './uiControls';
 import type { WaveParams } from '../types';
 
@@ -79,6 +80,20 @@ function main() {
     }
   }
 
+  // Wire SURF button — must be after init() so getCamera/getControls are ready
+  const surfBtn = document.getElementById('surf-btn');
+  if (surfBtn && ok) {
+    surfBtn.addEventListener('click', () => {
+      if (isGameModeActive()) exitGameMode();
+      else enterGameMode(params, simTime);
+    });
+  }
+
+  const respawnBtn = document.getElementById('respawn-btn');
+  if (respawnBtn) {
+    respawnBtn.addEventListener('click', () => respawnPlayer(params, simTime));
+  }
+
   initControls(controlsPanel, params, (newParams: WaveParams) => {
     const wave2Toggled = newParams.wave2Enabled !== params.wave2Enabled;
     const mergedParams = { ...newParams, timeScale: params.timeScale };
@@ -121,14 +136,23 @@ function main() {
 
     simTime += dt * params.timeScale;
 
+    // Surface mesh always updated — player sees live animated ocean in both modes
     const alphaFn = makeAlphaFn(simTime);
     const renderParams = (propState !== null && !params.wave2Enabled)
       ? { ...params, wave2Enabled: true }
       : params;
     const surface = sampleSurface(renderParams, simTime, surfaceBuffer, alphaFn);
     update(surface, params.gridRes);
-    updateGamePlane(params, simTime);
-    updateOriginMarkers(params, simTime);
+
+    if (isGameModeActive()) {
+      // Game mode: physics drives the camera; skip profile line & origin rings
+      // (they appear as floating artifacts in first-person view)
+      updateGameMode(params, simTime, dt);
+    } else {
+      updateGamePlane(params, simTime);
+      updateOriginMarkers(params, simTime);
+    }
+
     render();
 
     requestAnimationFrame(loop);

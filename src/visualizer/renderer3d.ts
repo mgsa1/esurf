@@ -57,9 +57,18 @@ let wave2SpikeBuf: Float32Array;
 let wave2SpikeAttr: THREE.BufferAttribute;
 let wave2Label: THREE.Sprite;
 
+let waveMeshMaterial: THREE.MeshBasicMaterial;
+
 let isInitialized = false;
 let firstRenderDone = false;
 let currentGridRes = 0;
+
+// ---- Theme state ----
+type Theme = 'night' | 'sunset';
+let currentTheme: Theme = 'night';
+let sunsetGrid: THREE.GridHelper;
+let sunSprite: THREE.Sprite;
+let sunsetSkyTexture: THREE.CanvasTexture;
 
 /** Create a horizontal ring (closed loop) lying flat in the XY plane at z = 0. */
 function createRing(radius: number, color: number): THREE.Line {
@@ -106,6 +115,49 @@ function createLabel(text: string, color: string): THREE.Sprite {
   const sprite = new THREE.Sprite(mat);
   sprite.scale.set(3, 1.5, 1);
   sprite.renderOrder = 11;
+  return sprite;
+}
+
+/**
+ * Create a 2×256 canvas gradient texture for the sunset sky.
+ * Canvas y=0 (top) maps to the screen top; y=255 (bottom) maps to the horizon.
+ * Gradient: deep burnt-orange at zenith → warm orange → golden yellow at horizon.
+ */
+function createSunsetSkyTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 2;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d')!;
+  const grad = ctx.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0.00, '#C94015');  // deep burnt orange-red (zenith)
+  grad.addColorStop(0.35, '#E86A20');  // warm orange
+  grad.addColorStop(0.70, '#F5A040');  // golden amber
+  grad.addColorStop(1.00, '#FFD070');  // golden yellow (horizon)
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 2, 256);
+  return new THREE.CanvasTexture(canvas);
+}
+
+/**
+ * Create a large solid sun sprite — cream-white core with a soft warm orange edge.
+ * Matches the near-solid sun disc in the design inspiration (no neon glow).
+ */
+function createSunSprite(): THREE.Sprite {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0.00, 'rgba(255, 250, 220, 1.0)');  // cream white core
+  grad.addColorStop(0.70, 'rgba(255, 250, 200, 1.0)');  // solid warm white
+  grad.addColorStop(0.85, 'rgba(255, 200, 120, 0.5)');  // soft warm orange edge
+  grad.addColorStop(1.00, 'rgba(255, 160,  60, 0.0)');  // transparent
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 128, 128);
+  const tex = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(16, 16, 1);
   return sprite;
 }
 
@@ -158,13 +210,13 @@ export function init(canvas: HTMLCanvasElement): boolean {
 
   meshGeometry.setDrawRange(0, 0);
 
-  const material = new THREE.MeshBasicMaterial({
+  waveMeshMaterial = new THREE.MeshBasicMaterial({
     vertexColors: true,
     side: THREE.DoubleSide,
     wireframe: true,
   });
 
-  const mesh = new THREE.Mesh(meshGeometry, material);
+  const mesh = new THREE.Mesh(meshGeometry, waveMeshMaterial);
   scene.add(mesh);
 
   // ---- Game plane: semi-transparent XZ plane at y = 0 ----
@@ -182,6 +234,7 @@ export function init(canvas: HTMLCanvasElement): boolean {
   gamePlaneMesh = new THREE.Mesh(planeGeo, planeMat);
   gamePlaneMesh.rotation.x = Math.PI / 2;
   gamePlaneMesh.renderOrder = 1;
+  gamePlaneMesh.visible = false;
   scene.add(gamePlaneMesh);
 
   // ---- Wave profile at y = 0: the actual 2D gameplay wave ----
@@ -198,6 +251,7 @@ export function init(canvas: HTMLCanvasElement): boolean {
   });
   gameProfileLine = new THREE.Line(profileGeo, profileMat);
   gameProfileLine.renderOrder = 2;
+  gameProfileLine.visible = false;
   scene.add(gameProfileLine);
 
   // ---- Wave origin markers ----
@@ -229,6 +283,27 @@ export function init(canvas: HTMLCanvasElement): boolean {
   wave2Label = createLabel('W2', '#00ffcc');
   wave2Label.visible = false;
   scene.add(wave2Label);
+
+  // ---- Sunset theme objects (hidden by default, shown only in SURF MODE) ----
+
+  // Pre-create the sky gradient texture (cheap — just a 2×256 canvas)
+  sunsetSkyTexture = createSunsetSkyTexture();
+
+  // Retro floor grid: dusty mauve, rotated to lie in the XY plane (Z-up world)
+  // GridHelper default lies in the XZ plane (Y-up). rotation.x = π/2 → XY plane.
+  sunsetGrid = new THREE.GridHelper(80, 20, 0x9868A0, 0x9868A0);
+  sunsetGrid.rotation.x = Math.PI / 2;
+  sunsetGrid.position.z = -6;  // below wave troughs (default amplitude ≈ 3)
+  (sunsetGrid.material as THREE.LineBasicMaterial).transparent = true;
+  (sunsetGrid.material as THREE.LineBasicMaterial).opacity = 0.55;
+  sunsetGrid.visible = false;
+  scene.add(sunsetGrid);
+
+  // Sun sprite: far in the +X direction at horizon height
+  sunSprite = createSunSprite();
+  sunSprite.position.set(60, 0, 14);
+  sunSprite.visible = false;
+  scene.add(sunSprite);
 
   // Handle canvas resize
   const ro = new ResizeObserver(() => {
@@ -308,9 +383,18 @@ export function update(surfaceData: SurfaceData, gridRes: number): void {
   for (let i = 0; i < vertCount; i++) {
     const z = positionBuffer[i * 3 + 2];
     const t = (z - zMin) / zRange;  // 0 at trough, 1 at crest
-    colorBuffer[i * 3    ] = 0.04 + (0.00 - 0.04) * t;  // R: 0.04 → 0.00
-    colorBuffer[i * 3 + 1] = 0.04 + (1.00 - 0.04) * t;  // G: 0.04 → 1.00
-    colorBuffer[i * 3 + 2] = 0.17 + (0.80 - 0.17) * t;  // B: 0.17 → 0.80
+    if (currentTheme === 'sunset') {
+      // Trough: dark teal  #1A4035 → [0.10, 0.25, 0.21]
+      // Crest:  warm orange #FFA050 → [1.00, 0.63, 0.31]
+      colorBuffer[i * 3    ] = 0.10 + (1.00 - 0.10) * t;  // R: 0.10 → 1.00
+      colorBuffer[i * 3 + 1] = 0.25 + (0.63 - 0.25) * t;  // G: 0.25 → 0.63
+      colorBuffer[i * 3 + 2] = 0.21 + (0.31 - 0.21) * t;  // B: 0.21 → 0.31
+    } else {
+      // Night (original): near-black #0A0A2A → neon cyan #00FFCC
+      colorBuffer[i * 3    ] = 0.04 + (0.00 - 0.04) * t;  // R: 0.04 → 0.00
+      colorBuffer[i * 3 + 1] = 0.04 + (1.00 - 0.04) * t;  // G: 0.04 → 1.00
+      colorBuffer[i * 3 + 2] = 0.17 + (0.80 - 0.17) * t;  // B: 0.17 → 0.80
+    }
   }
   colorAttribute.needsUpdate = true;
 
@@ -392,18 +476,55 @@ export function updateOriginMarkers(params: WaveParams, t: number): void {
   }
 }
 
+export function getCamera(): THREE.PerspectiveCamera { return camera; }
+export function getControls(): OrbitControls           { return controls; }
+export function getRenderer(): THREE.WebGLRenderer     { return renderer; }
+export function getScene(): THREE.Scene                { return scene; }
+
 /**
  * Advance controls and render one frame.
  */
 export function render(): void {
   if (!isInitialized) return;
 
-  controls.update();
+  // Skip OrbitControls update in game mode — camera is driven by gameMode.ts
+  if (controls.enabled) controls.update();
   renderer.render(scene, camera);
 
   if (!firstRenderDone) {
     firstRenderDone = true;
     const overlay = document.getElementById('loading-overlay');
     if (overlay) overlay.style.display = 'none';
+  }
+}
+
+/**
+ * Switch between the "Neon Night" visualizer theme and the SURF MODE
+ * "1980s California Sunset Beach" theme.
+ *
+ * Night:  near-black bg, neon cyan → near-black wave gradient, no fog
+ * Sunset: burnt-orange gradient sky, warm orange → dark teal wave gradient,
+ *         dusty mauve retro floor grid, solid sun disc, warm amber fog
+ *
+ * Called by gameMode.ts on enter/exit. All sunset objects are pre-allocated
+ * in init() and simply shown/hidden here — no per-call allocation.
+ */
+export function setTheme(theme: Theme): void {
+  if (!isInitialized) return;
+  currentTheme = theme;
+  if (theme === 'sunset') {
+    scene.background = sunsetSkyTexture;
+    renderer.setClearColor(0xE86A20);
+    scene.fog = new THREE.FogExp2(0xCC6020, 0.015);
+    waveMeshMaterial.wireframe = false;  // solid ocean surface
+    sunsetGrid.visible = true;
+    sunSprite.visible = true;
+  } else {
+    scene.background = new THREE.Color(0x0a0a1a);
+    renderer.setClearColor(0x0a0a1a);
+    scene.fog = null;
+    waveMeshMaterial.wireframe = true;   // restore wireframe for night mode
+    sunsetGrid.visible = false;
+    sunSprite.visible = false;
   }
 }

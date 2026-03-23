@@ -21,6 +21,8 @@ export function getDefaultParams(): WaveParams {
     gridRes: 80,
     gridExtent: 30,
     planeOffset: 18,
+    spawnX: 6,
+    spawnY: 18,
     wave2Enabled: false,
     wave2OriginX: 0,
     wave2OriginY: -20,
