@@ -79,22 +79,32 @@ export type SurfaceData = Float32Array;
  *
  * worldX: position along wave propagation direction (world units)
  * worldZ: height above/below still water level (0 = still water surface)
- * vx, vz: velocity components (world units/s)
- * onSurface: true when in contact with the wave floor
  *
- * Physics regimes:
- *   onSurface = true,  isGrinding = false → slope-based gravity drives lateral motion
- *   onSurface = true,  isGrinding = true  → locked to wave crest, sliding along lip
- *   onSurface = false, isGrinding = false → airborne, only gravity (az = −g)
+ * Grounded motion is governed by groundSpeed (scalar along local tangent).
+ * Airborne motion uses airVelX / airVelZ (screen-space ballistics).
+ * vx / vz are derived each frame for rendering (sprite direction, etc.).
  */
 export interface PlayerState {
   worldX: number;
   worldZ: number;
+  /** Scalar speed along local wave tangent. Primary authority when grounded. */
+  groundSpeed: number;
+  /** Carve engagement from -1 (full backside) to +1 (full frontside). */
+  edge: number;
+  /** True when in contact with the wave surface. */
+  grounded: boolean;
+  /** Horizontal velocity — only authoritative when airborne. */
+  airVelX: number;
+  /** Vertical velocity — only authoritative when airborne. */
+  airVelZ: number;
+  /** Seconds remaining before next pump is allowed. */
+  pumpCooldown: number;
+  /** Derived horizontal velocity (from groundSpeed * tangent.x or airVelX). */
   vx: number;
+  /** Derived vertical velocity (from groundSpeed * tangent.z or airVelZ). */
   vz: number;
-  onSurface: boolean;
-  /** True while the surfer is grinding along a wave crest (lip slide). */
-  isGrinding: boolean;
+  /** True when in a deep carve (|edge| > 0.8) — used for visual crouch. */
+  isCrouching: boolean;
 }
 
 /**

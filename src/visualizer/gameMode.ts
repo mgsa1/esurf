@@ -26,56 +26,58 @@
 import * as THREE from 'three';
 import { surfaceZ } from '../math/trochoidal';
 import { getCamera, getControls, getScene, setTheme } from './renderer3d';
+import { createSpriteSheet, FRAME, FRAME_COUNT } from '../assets/surferSpriteSheet';
 import type { WaveParams } from '../types';
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-const G = 9.81;
+const G = 5.0;                     // light arcade gravity
 
 // ---- Board dynamics ----
-const LEAN_RATE          = 8.0;
-const ENGAGE_RATE        = 5.0;
-const DISENGAGE_RATE     = 8.0;
-const BASE_TURN_RADIUS   = 3.5;
-const SPEED_TURN_FACTOR  = 0.35;
-const MAX_SPEED          = 25;
+const LEAN_RATE          = 16.0;   // snappy direction changes on A/D
+const ENGAGE_RATE        = 8.0;    // fast rail engagement
+const DISENGAGE_RATE     = 3.0;    // hold edge longer after releasing input
+const BASE_TURN_RADIUS   = 2.0;    // tighter turns
+const SPEED_TURN_FACTOR  = 0.15;   // less turn radius growth with speed
+const MAX_SPEED          = 28;     // controlled top speed
 
 // ---- Drag (speed-squared model) ----
-const DRAG_FACE          = 0.012;
-const DRAG_TROUGH        = 0.04;
-const DRAG_BRAKE         = 0.12;
+const DRAG_FACE          = 0.008;  // light on face — feels flowy
+const DRAG_TROUGH        = 0.022;  // moderate off-face
+const DRAG_BRAKE         = 0.25;   // very strong brake — can stop before next wave
 
 // ---- Wave energy coupling ----
-const COUPLING_STRENGTH  = 0.45;
-const FACE_Q_RIDE_ENTER  = 0.20;
-const FACE_Q_RIDE_EXIT   = 0.05;
-const RIDE_EXIT_TIME     = 2.0;
+const COUPLING_STRENGTH  = 1.5;    // good wave push
+const FACE_Q_RIDE_ENTER  = 0.12;   // easier to catch waves
+const FACE_Q_RIDE_EXIT   = 0.01;   // very hard to fall off
+const RIDE_EXIT_TIME     = 5.0;    // extremely forgiving
 
 // ---- Pump timing ----
-const PUMP_BUILD         = 3.0;
-const PUMP_DRAIN         = 2.0;
-const PUMP_POWER         = 4.5;
-const PUMP_SLOPE_DEAD    = 0.08;
+const PUMP_BUILD         = 4.0;
+const PUMP_DRAIN         = 1.5;
+const PUMP_POWER         = 10.0;   // strong pump — reward rhythm
+const PUMP_SLOPE_DEAD    = 0.05;
 
 // ---- Paddling ----
-const PADDLE_ACCEL       = 4.0;
-const PADDLE_MAX_SPEED   = 4.0;
-const PADDLE_DRAG        = 0.6;
-const PADDLE_TURN_RATE   = 2.5;
+const PADDLE_ACCEL       = 6.0;    // faster paddling
+const PADDLE_MAX_SPEED   = 6.0;    // faster max paddle speed
+const PADDLE_DRAG        = 0.4;
+const PADDLE_TURN_RATE   = 3.0;
 
 // ---- Air ----
-const BASE_JUMP_VZ       = 3.5;
-const LIP_LAUNCH_FACTOR  = 0.65;
-const AIR_SPIN_RATE      = 4.0;
-const LANDING_CLEAN      = 0.65;
-const LANDING_WIPEOUT    = 0.25;
-const AUTO_LAUNCH_ZDOT   = 3.0;
-const AUTO_LAUNCH_SPEED  = 5.0;
+const BASE_JUMP_VZ       = 3.0;    // modest jump
+const LIP_LAUNCH_FACTOR  = 0.35;   // subtle lip boost
+const AIR_SPIN_RATE      = 5.0;
+const LANDING_CLEAN      = 0.40;   // very forgiving clean landing
+const LANDING_WIPEOUT    = 0.10;   // almost impossible to wipeout
+const AUTO_LAUNCH_ZDOT   = 5.0;    // only launch on very fast-rising crests
+const AUTO_LAUNCH_SPEED  = 8.0;    // need real speed to auto-launch
+const LAUNCH_COOLDOWN    = 1.5;    // seconds before auto-launch can fire again after landing
 
 // ---- Wipeout ----
-const WIPEOUT_DURATION   = 1.8;
+const WIPEOUT_DURATION   = 1.2;    // faster recovery
 
 // ---- Camera ----
 const CAM_DISTANCE       = 12;
@@ -142,6 +144,7 @@ let pumpEnergy = 0;
 let pumpTimingGood = false;
 
 let wipeoutTimer = 0;
+let launchCooldown = 0;        // seconds until auto-launch is allowed again
 
 const camPos = new THREE.Vector3();
 const camLookAt = new THREE.Vector3();
@@ -157,6 +160,10 @@ const keys = { left: false, right: false, up: false, down: false };
 let jumpPressed = false;
 
 let boardGroup: THREE.Group | null = null;
+
+// Billboard sprite (pixel art surfer)
+let surferSprite: THREE.Sprite | null = null;
+let surferTexture: THREE.CanvasTexture | null = null;
 
 // Particles
 const particlePos = new Float32Array(MAX_PARTICLES * 3);
@@ -189,62 +196,70 @@ function lerp(a: number, b: number, t: number): number {
 }
 
 // ============================================================================
-// Board mesh
+// Billboard sprite (pixel art surfer)
 // ============================================================================
 
-function createBoard(): THREE.Group {
-  const group = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.BoxGeometry(5.7, 1.56, 0.18),
-    new THREE.MeshBasicMaterial({ color: 0xEEF4FF }),
-  );
-  group.add(body);
-  const nose = new THREE.Mesh(
-    new THREE.BoxGeometry(0.24, 1.32, 0.186),
-    new THREE.MeshBasicMaterial({ color: 0xFF4400 }),
-  );
-  nose.position.x = 2.64;
-  group.add(nose);
-  const fin = new THREE.Mesh(
-    new THREE.BoxGeometry(0.84, 0.12, 0.54),
-    new THREE.MeshBasicMaterial({ color: 0x1A2A3A }),
-  );
-  fin.position.x = -2.16;
-  fin.position.z = 0.36;
-  group.add(fin);
-  return group;
+/** Sprite size in world units — proportional to old board (5.7×1.56). */
+const SPRITE_SIZE = 4.0;
+/**
+ * Z offset so the board in the sprite sits at the water surface.
+ * The board bottom is ~row 34 of 48 in the sprite, so the visual content
+ * ends about 70% down from the top. The sprite is centered on its position,
+ * so we lift by less than half to compensate for the empty bottom rows.
+ */
+const SPRITE_Z_OFFSET = SPRITE_SIZE * 0.3;
+
+function createSurferSprite(): THREE.Sprite {
+  const { canvas, frameCount } = createSpriteSheet();
+  surferTexture = new THREE.CanvasTexture(canvas as HTMLCanvasElement);
+  surferTexture.magFilter = THREE.NearestFilter;
+  surferTexture.minFilter = THREE.NearestFilter;
+  surferTexture.repeat.set(1 / frameCount, 1);
+  surferTexture.offset.x = FRAME.RIDE / frameCount;
+
+  const mat = new THREE.SpriteMaterial({
+    map: surferTexture,
+    transparent: true,
+    depthWrite: false,
+  });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(SPRITE_SIZE, SPRITE_SIZE, 1);
+  sprite.renderOrder = 10;
+  return sprite;
 }
 
-const _waveNormal = new THREE.Vector3();
-const _noseDir = new THREE.Vector3();
-const _boardRight = new THREE.Vector3();
-const _basisMatrix = new THREE.Matrix4();
-const _leanQuat = new THREE.Quaternion();
+function setSpriteFrame(frameIdx: number): void {
+  if (!surferTexture) return;
+  surferTexture.offset.x = frameIdx / FRAME_COUNT;
+}
 
-function updateBoardTransform(slope: number, radialX: number, radialY: number): void {
-  if (!boardGroup) return;
-  boardGroup.position.set(posX, posY, posZ);
-
-  _waveNormal.set(-slope * radialX, -slope * radialY, 1).normalize();
-
-  _noseDir.set(Math.cos(boardYaw), Math.sin(boardYaw), 0);
-  _noseDir.addScaledVector(_waveNormal, -_noseDir.dot(_waveNormal)).normalize();
-
-  // Visual lean: rotate the normal around the nose direction
-  if (Math.abs(leanAngle) > 0.01 && surfState === 'RIDING') {
-    _leanQuat.setFromAxisAngle(_noseDir, leanAngle * 0.5);
-    _waveNormal.applyQuaternion(_leanQuat);
+/** Pick the right animation frame based on current surf state and lean. */
+function selectFrame(): number {
+  switch (surfState) {
+    case 'PADDLING':  return FRAME.PADDLE;
+    case 'AIRBORNE':  return FRAME.AIRBORNE;
+    case 'WIPEOUT':   return FRAME.WIPEOUT;
+    case 'RIDING': {
+      if (leanAngle > 0.35)  return FRAME.LEAN_LEFT;
+      if (leanAngle < -0.35) return FRAME.LEAN_RIGHT;
+      return FRAME.RIDE;
+    }
+    default: return FRAME.RIDE;
   }
+}
 
-  _boardRight.crossVectors(_waveNormal, _noseDir);
-  _basisMatrix.makeBasis(_noseDir, _boardRight, _waveNormal);
-  boardGroup.quaternion.setFromRotationMatrix(_basisMatrix);
+function updateBoardTransform(_slope: number, _radialX: number, _radialY: number): void {
+  if (!surferSprite) return;
+  surferSprite.position.set(posX, posY, posZ + SPRITE_Z_OFFSET);
+  setSpriteFrame(selectFrame());
+  // Suppress unused — kept for API consistency with physics callers
+  void _slope; void _radialX; void _radialY;
 }
 
 function updateBoardTransformAir(): void {
-  if (!boardGroup) return;
-  boardGroup.position.set(posX, posY, posZ);
-  boardGroup.quaternion.setFromEuler(new THREE.Euler(0, 0, boardYaw + airSpin, 'XYZ'));
+  if (!surferSprite) return;
+  surferSprite.position.set(posX, posY, posZ + SPRITE_Z_OFFSET);
+  setSpriteFrame(selectFrame());
 }
 
 // ============================================================================
@@ -444,14 +459,16 @@ function updatePaddling(wf: WaveFrame, dt: number, extent: number): void {
   posY += Math.sin(boardYaw) * speed * dt;
   posX = clamp(posX, -extent, extent);
   posY = clamp(posY, -extent, extent);
-  posZ = surfaceZ(posX, posY, liveParams!, liveSimTime);
+  // Smooth surface tracking to avoid blinking
+  const paddleTargetZ = surfaceZ(posX, posY, liveParams!, liveSimTime);
+  posZ = lerp(posZ, paddleTargetZ, Math.min(20 * dt, 1));
 
   leanAngle *= 0.9;
   edgeEngagement *= 0.9;
 
-  if (wf.face_q > FACE_Q_RIDE_ENTER && speed > 1.5) {
+  if (wf.face_q > FACE_Q_RIDE_ENTER && speed > 1.0) {
     enterState('RIDING');
-    speed += 2.0;
+    speed += 3.0;  // catch boost — feel the wave grab you
   }
 }
 
@@ -480,9 +497,11 @@ function updateRiding(wf: WaveFrame, params: WaveParams, simTime: number, dt: nu
   const boardDotRadial = Math.cos(boardYaw) * wf.radialX + Math.sin(boardYaw) * wf.radialY;
   speed += gravAccel * boardDotRadial * dt;
 
-  // 3. Wave energy coupling
-  const wavePush = COUPLING_STRENGTH * wf.water_vr * Math.max(wf.face_q, 0);
-  speed += wavePush * boardDotRadial * dt;
+  // 3. Wave energy coupling — only on the wave face, not the backside
+  // face_q > 0 = front face (where energy is), face_q ≈ 0 = back/trough
+  // boardDotRadial > 0 = heading toward wave origin (into the face)
+  const wavePush = COUPLING_STRENGTH * wf.water_vr * wf.face_q;
+  speed += wavePush * Math.max(boardDotRadial, 0) * dt;
 
   // 4. Pump timing
   const slopeAlongHeading = wf.slope * boardDotRadial;
@@ -502,10 +521,12 @@ function updateRiding(wf: WaveFrame, params: WaveParams, simTime: number, dt: nu
     pumpEnergy = Math.max(0, pumpEnergy - 0.5 * dt);
   }
 
+  // Pump only effective on the face, not the backside
   speed += pumpEnergy * PUMP_POWER * Math.max(wf.face_q, 0.1) * dt;
 
-  // 5. Drag
-  let dragCoeff = lerp(DRAG_TROUGH, DRAG_FACE, wf.face_q);
+  // 5. Drag — higher on the backside/trough, low on the face
+  const backsidePenalty = wf.face_q < 0.1 ? 0.03 : 0;  // extra drag on the back
+  let dragCoeff = lerp(DRAG_TROUGH, DRAG_FACE, wf.face_q) + backsidePenalty;
   if (keys.down) dragCoeff = DRAG_BRAKE;
   speed -= dragCoeff * speed * Math.abs(speed) * dt;
   speed = clamp(speed, -MAX_SPEED, MAX_SPEED);
@@ -515,7 +536,9 @@ function updateRiding(wf: WaveFrame, params: WaveParams, simTime: number, dt: nu
   posY += Math.sin(boardYaw) * speed * dt;
   posX = clamp(posX, -extent, extent);
   posY = clamp(posY, -extent, extent);
-  posZ = surfaceZ(posX, posY, params, simTime);
+  // Smooth surface tracking — fast lerp to avoid blinking but stay glued
+  const targetZ = surfaceZ(posX, posY, params, simTime);
+  posZ = lerp(posZ, targetZ, Math.min(30 * dt, 1));
 
   // 7. Jump / launch
   if (jumpPressed) {
@@ -539,11 +562,12 @@ function updateRiding(wf: WaveFrame, params: WaveParams, simTime: number, dt: nu
     return;
   }
 
-  // Auto-launch
-  if (wf.zdot > AUTO_LAUNCH_ZDOT && Math.abs(speed) > AUTO_LAUNCH_SPEED) {
+  // Auto-launch — only when wave is rising very fast, surfer has real speed, and cooldown elapsed
+  launchCooldown = Math.max(launchCooldown - dt, 0);
+  if (wf.zdot > AUTO_LAUNCH_ZDOT && Math.abs(speed) > AUTO_LAUNCH_SPEED && launchCooldown <= 0) {
     velX = Math.cos(boardYaw) * speed;
     velY = Math.sin(boardYaw) * speed;
-    velZ = clamp(wf.zdot * 0.6, BASE_JUMP_VZ * 0.5, MAX_SPEED * 0.5);
+    velZ = clamp(wf.zdot * 0.2, 1.5, 4.0);   // small pop, not a rocket
     airSpin = 0;
     enterState('AIRBORNE');
     spawnBurst(12, 0.8);
@@ -584,7 +608,8 @@ function updateAirborne(wf: WaveFrame, params: WaveParams, simTime: number, dt: 
   posY = clamp(posY, -extent, extent);
 
   const zSurface = surfaceZ(posX, posY, params, simTime);
-  if (posZ <= zSurface + 0.3) {
+  // Only land when actually below surface and moving downward (prevents bounce loops)
+  if (posZ <= zSurface && velZ <= 0) {
     posZ = zSurface;
 
     const landingWF = computeWaveFrame(posX, posY, params, simTime);
@@ -593,29 +618,18 @@ function updateAirborne(wf: WaveFrame, params: WaveParams, simTime: number, dt: 
     const waveNormZ = 1.0;
     const wnLen = Math.sqrt(waveNormX * waveNormX + waveNormY * waveNormY + waveNormZ * waveNormZ);
 
-    const spinCycles = Math.abs(airSpin) / (Math.PI * 2);
-    const spinPenalty = spinCycles > 0.8 ? clamp(1 - (spinCycles - 0.8) * 2, 0, 1) : 1;
-
+    // All landings succeed — speed penalty scales with alignment quality
     const landSpeed = Math.sqrt(velX * velX + velY * velY);
     const velDotNorm = velX * waveNormX / wnLen + velY * waveNormY / wnLen + velZ * waveNormZ / wnLen;
     const alignmentQ = clamp(1 - Math.abs(velDotNorm) / Math.max(landSpeed + Math.abs(velZ), 0.1) * 0.8, 0, 1);
 
-    const landingQ = alignmentQ * spinPenalty;
-
-    if (landingQ > LANDING_CLEAN) {
-      speed = landSpeed * (0.85 + landingQ * 0.15);
-      boardYaw = landSpeed > 0.5 ? Math.atan2(velY, velX) : boardYaw + airSpin;
-      enterState('RIDING');
-      spawnBurst(10, 0.7);
-    } else if (landingQ > LANDING_WIPEOUT) {
-      speed = landSpeed * (0.3 + landingQ * 0.4);
-      boardYaw = landSpeed > 0.5 ? Math.atan2(velY, velX) : boardYaw + airSpin;
-      enterState('RIDING');
-      spawnBurst(15, 1.0);
-    } else {
-      enterState('WIPEOUT');
-      spawnBurst(30, 1.5);
-    }
+    // Good landing keeps 85-100% speed, bad landing keeps 40-85%
+    const preserve = 0.4 + alignmentQ * 0.6;
+    speed = landSpeed * preserve;
+    boardYaw = landSpeed > 0.5 ? Math.atan2(velY, velX) : boardYaw + airSpin;
+    enterState('RIDING');
+    launchCooldown = LAUNCH_COOLDOWN;  // prevent immediate re-launch
+    spawnBurst(Math.round(8 + (1 - alignmentQ) * 15), 0.7 + (1 - alignmentQ) * 0.8);
 
     velX = 0; velY = 0; velZ = 0;
     airSpin = 0;
@@ -624,8 +638,11 @@ function updateAirborne(wf: WaveFrame, params: WaveParams, simTime: number, dt: 
 
   if (posZ < 0) {
     posZ = 0;
-    enterState('WIPEOUT');
-    spawnBurst(25, 1.2);
+    speed = Math.sqrt(velX * velX + velY * velY) * 0.5;
+    launchCooldown = LAUNCH_COOLDOWN;
+    boardYaw = speed > 0.5 ? Math.atan2(velY, velX) : boardYaw;
+    enterState('RIDING');
+    spawnBurst(12, 1.0);
     velX = 0; velY = 0; velZ = 0;
     airSpin = 0;
   }
@@ -833,8 +850,8 @@ export function enterGameMode(params: WaveParams, simTime: number): void {
   const surfBtn = document.getElementById('surf-btn');
   if (surfBtn) surfBtn.textContent = 'EXIT ✕';
 
-  boardGroup = createBoard();
-  getScene().add(boardGroup);
+  surferSprite = createSurferSprite();
+  getScene().add(surferSprite);
   initParticles();
   initWake();
   clearWake();
@@ -867,6 +884,12 @@ export function exitGameMode(): void {
   const surfBtn = document.getElementById('surf-btn');
   if (surfBtn) surfBtn.textContent = 'SURF ▶';
 
+  if (surferSprite) {
+    getScene().remove(surferSprite);
+    surferSprite.material.dispose();
+    if (surferTexture) { surferTexture.dispose(); surferTexture = null; }
+    surferSprite = null;
+  }
   if (boardGroup) { getScene().remove(boardGroup); boardGroup = null; }
   if (particlePoints) { getScene().remove(particlePoints); particlePoints = null; particleGeom = null; }
   if (wakeLine) { getScene().remove(wakeLine); wakeLine = null; wakeGeom = null; }
@@ -886,6 +909,7 @@ export function respawnPlayer(params: WaveParams, simTime: number): void {
   leanAngle = 0; edgeEngagement = 0;
   pumpEnergy = 0; airSpin = 0;
   jumpPressed = false; wipeoutTimer = 0; lowFaceTimer = 0;
+  launchCooldown = 0;
   enterState('PADDLING');
   clearWake();
 }

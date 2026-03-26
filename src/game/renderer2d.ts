@@ -176,18 +176,17 @@ export function drawFrame(
   ctx.stroke();
 
   // ---- Layer 4: Surfer sprite ----
-  // While grinding, the surfer crouches low on the lip — shift the sprite down
-  // by 6px and squash the height to 16px to suggest the low crouch position.
-  const grindOffset = player.isGrinding ? 6 : 0;
-  const spriteH     = player.isGrinding ? 16 : 24;
+  // Deep carve crouches low — shift the sprite down by 6px and squash height.
+  const crouchOffset = player.isCrouching ? 6 : 0;
+  const spriteH      = player.isCrouching ? 16 : 24;
   const px = Math.round(sX(player.worldX) - 8);
-  const py = Math.round(sY(player.worldZ) - spriteH + grindOffset);
+  const py = Math.round(sY(player.worldZ) - spriteH + crouchOffset);
 
   const sprite = player.vx < 0 ? surferBack : surferFront;
   if (sprite && sprite.complete && sprite.naturalWidth > 0) {
     ctx.drawImage(sprite, px, py, 16, spriteH);
   } else {
-    ctx.fillStyle = player.isGrinding ? '#FF8800' : '#FFD060';
+    ctx.fillStyle = player.isCrouching ? '#FF8800' : '#FFD060';
     ctx.fillRect(px + 4, py + 4, 8, spriteH - 8);
   }
 }
