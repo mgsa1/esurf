@@ -48,7 +48,7 @@ export function wave2PhaseVelocity(params: WaveParams): number {
 /** Height contribution from wave 2 at (worldX, worldY). Returns 0 when disabled.
  *  Optional `alpha` overrides the enabled flag with a continuous [0..1] multiplier,
  *  used by the visualizer to propagate toggle changes as a wavefront. */
-function wave2Z(worldX: number, worldY: number, params: WaveParams, t: number, alpha?: number): number {
+export function wave2Z(worldX: number, worldY: number, params: WaveParams, t: number, alpha?: number): number {
   const eff = alpha ?? (params.wave2Enabled ? 1 : 0);
   if (eff === 0 || params.wave2Amplitude === 0) return 0;
   const k2 = (2 * Math.PI) / Math.max(params.wave2Wavelength, 0.01);

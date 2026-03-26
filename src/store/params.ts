@@ -29,6 +29,8 @@ export function getDefaultParams(): WaveParams {
     wave2Amplitude: 2.0,
     wave2Wavelength: 12,
     wave2SpeedFactor: 1.0,
+    wallEnabled: false,
+    wallReflection: 0.3,
   };
 }
 

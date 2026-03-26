@@ -52,8 +52,8 @@ const GROUPS: Array<{ label: string; sliders: SliderConfig[] }> = [
 
 // Wave 2 sliders (numeric only — the boolean toggle is handled separately)
 const WAVE2_SLIDERS: SliderConfig[] = [
-  { key: 'wave2OriginX',    label: 'origin X',   min: -50, max: 50,  step: 0.5,  desc: 'X coordinate of wave 2 center (-50–50)' },
-  { key: 'wave2OriginY',    label: 'origin Y',   min: -50, max: 50,  step: 0.5,  desc: 'Y coordinate of wave 2 center (-50–50)' },
+  { key: 'wave2OriginX',    label: 'origin X',   min: -250, max: 250,  step: 0.5,  desc: 'X coordinate of wave 2 center (-250–250)' },
+  { key: 'wave2OriginY',    label: 'origin Y',   min: -250, max: 250,  step: 0.5,  desc: 'Y coordinate of wave 2 center (-250–250)' },
   { key: 'wave2Amplitude',  label: 'amplitude',  min: 0,   max: 8,   step: 0.05, desc: 'crest height of wave 2 (0–8)' },
   { key: 'wave2Wavelength', label: 'wavelength', min: 5,   max: 60,  step: 0.5,  desc: 'spatial period of wave 2 (5–60)' },
   { key: 'wave2SpeedFactor',label: 'speedFactor',min: 0.1, max: 3,   step: 0.05, desc: 'speed multiplier of wave 2 (0.1–3)' },
@@ -61,9 +61,9 @@ const WAVE2_SLIDERS: SliderConfig[] = [
 
 // Preset accent colors
 const PRESET_COLORS: Record<string, { border: string; activeBg: string }> = {
-  gentleSwell: { border: '#00FFCC', activeBg: 'rgba(0,255,204,0.15)' },
-  surfBreak:   { border: '#FF6EB4', activeBg: 'rgba(255,110,180,0.15)' },
-  stormWave:   { border: '#FFB800', activeBg: 'rgba(255,184,0,0.15)' },
+  longboardCruise: { border: '#00FFCC', activeBg: 'rgba(0,255,204,0.15)' },
+  crossSeas:      { border: '#FF6EB4', activeBg: 'rgba(255,110,180,0.15)' },
+  bigWaveDay:     { border: '#FFB800', activeBg: 'rgba(255,184,0,0.15)' },
 };
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -418,6 +418,99 @@ export function initControls(
 
   wave2Details.appendChild(wave2Body);
   container.appendChild(wave2Details);
+
+  // ---- Wall section (reflective boundary at +X grid edge) ----
+  const wallDetails = document.createElement('details');
+  wallDetails.open = false;
+  wallDetails.style.cssText = `background: #16162A; border-bottom: 1px solid #2A2A4A;`;
+
+  const wallSummary = document.createElement('summary');
+  wallSummary.style.cssText = `
+    font-family: 'Courier New', monospace;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #666680;
+    padding: 8px 14px;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  `;
+
+  const wallSummaryText = document.createElement('span');
+  wallSummaryText.textContent = 'WALL — REFLECTION';
+  wallSummary.appendChild(wallSummaryText);
+
+  const wallBadge = document.createElement('span');
+  wallBadge.textContent = params.wallEnabled ? 'ON' : 'OFF';
+  wallBadge.style.cssText = `
+    font-size: 8px;
+    padding: 1px 5px;
+    border-radius: 2px;
+    background: ${params.wallEnabled ? 'rgba(255,110,180,0.2)' : 'rgba(80,80,100,0.3)'};
+    color: ${params.wallEnabled ? '#FF6EB4' : '#666680'};
+    border: 1px solid ${params.wallEnabled ? '#FF6EB4' : '#444460'};
+  `;
+  wallSummary.appendChild(wallBadge);
+  wallDetails.appendChild(wallSummary);
+
+  const wallBody = document.createElement('div');
+  wallBody.style.cssText = 'padding: 4px 14px 10px;';
+
+  const wallToggleBtn = document.createElement('button');
+  wallToggleBtn.setAttribute('aria-label', params.wallEnabled ? 'Disable wall' : 'Enable wall');
+
+  function updateWallToggleStyle() {
+    const on = params.wallEnabled;
+    wallToggleBtn.textContent = on ? '◉ WALL ENABLED' : '◎ WALL DISABLED';
+    wallToggleBtn.style.cssText = `
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      width: 100%;
+      padding: 6px 10px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      border-radius: 3px;
+      border: 1px solid ${on ? '#FF6EB4' : '#444460'};
+      background: ${on ? 'rgba(255,110,180,0.12)' : 'transparent'};
+      color: ${on ? '#FF6EB4' : '#666680'};
+    `;
+    wallBadge.textContent = on ? 'ON' : 'OFF';
+    wallBadge.style.background = on ? 'rgba(255,110,180,0.2)' : 'rgba(80,80,100,0.3)';
+    wallBadge.style.color = on ? '#FF6EB4' : '#666680';
+    wallBadge.style.borderColor = on ? '#FF6EB4' : '#444460';
+  }
+  updateWallToggleStyle();
+
+  wallToggleBtn.addEventListener('click', () => {
+    params = { ...params, wallEnabled: !params.wallEnabled };
+    wallToggleBtn.setAttribute('aria-label', params.wallEnabled ? 'Disable wall' : 'Enable wall');
+    updateWallToggleStyle();
+    fireOnChange();
+  });
+  wallBody.appendChild(wallToggleBtn);
+
+  const wallSliderCfg: SliderConfig = {
+    key: 'wallReflection', label: 'reflection', min: 0, max: 1, step: 0.05,
+    desc: 'fraction of wave energy reflected (0–1)',
+  };
+  const { row: wallRow, rangeEl: wallRange, numEl: wallNum } = buildRow(
+    wallSliderCfg,
+    '#FF6EB4',
+    () => params.wallReflection,
+    v => { (params as unknown as Record<string, number>).wallReflection = v; },
+    fireOnChange,
+    fireOnChange,
+  );
+  rangeInputs.set('wallReflection', wallRange);
+  numInputs.set('wallReflection', wallNum);
+  wallBody.appendChild(wallRow);
+
+  wallDetails.appendChild(wallBody);
+  container.appendChild(wallDetails);
 }
 
 /**

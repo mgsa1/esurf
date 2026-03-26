@@ -49,9 +49,9 @@ export interface WaveParams {
   // ---- Wave 2 (secondary, configurable origin) ----
   /** Enable the second wave source. When false, wave 2 contributes nothing. */
   wave2Enabled: boolean;
-  /** World-space X coordinate of the wave 2 origin (-50–50). */
+  /** World-space X coordinate of the wave 2 origin (-250–250). */
   wave2OriginX: number;
-  /** World-space Y coordinate of the wave 2 origin (-50–50). */
+  /** World-space Y coordinate of the wave 2 origin (-250–250). */
   wave2OriginY: number;
   /** Crest height of wave 2 above still water in world units (0–8). */
   wave2Amplitude: number;
@@ -59,6 +59,12 @@ export interface WaveParams {
   wave2Wavelength: number;
   /** Speed multiplier for wave 2 (0.1–3). */
   wave2SpeedFactor: number;
+
+  // ---- Wall (reflective boundary at +X grid edge) ----
+  /** Enable a reflective wall at the +X grid edge. */
+  wallEnabled: boolean;
+  /** Fraction of wave energy reflected by the wall (0 = full absorption, 1 = perfect mirror). */
+  wallReflection: number;
 }
 
 /**

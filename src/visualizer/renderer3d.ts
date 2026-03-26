@@ -57,6 +57,9 @@ let wave2SpikeBuf: Float32Array;
 let wave2SpikeAttr: THREE.BufferAttribute;
 let wave2Label: THREE.Sprite;
 
+// Wall indicator plane at +X grid edge
+let wallPlaneMesh: THREE.Mesh;
+
 let waveMeshMaterial: THREE.MeshBasicMaterial;
 
 let isInitialized = false;
@@ -236,6 +239,20 @@ export function init(canvas: HTMLCanvasElement): boolean {
   gamePlaneMesh.renderOrder = 1;
   gamePlaneMesh.visible = false;
   scene.add(gamePlaneMesh);
+
+  // ---- Wall indicator plane at +X grid edge ----
+  const wallGeo = new THREE.PlaneGeometry(1, 1);
+  const wallMat = new THREE.MeshBasicMaterial({
+    color: 0xFF6EB4,
+    transparent: true,
+    opacity: 0.12,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  wallPlaneMesh = new THREE.Mesh(wallGeo, wallMat);
+  wallPlaneMesh.renderOrder = 1;
+  wallPlaneMesh.visible = false;
+  scene.add(wallPlaneMesh);
 
   // ---- Wave profile at y = 0: the actual 2D gameplay wave ----
   // Sampled each frame via updateGamePlane(); drawn as a warm gold line.
@@ -474,6 +491,22 @@ export function updateOriginMarkers(params: WaveParams, t: number): void {
     wave2SpikeAttr.needsUpdate = true;
     wave2Label.position.set(ox, oy, z2 + 2.5);
   }
+}
+
+/**
+ * Show / hide / position the wall indicator plane at the +X grid edge.
+ */
+export function updateWallMarker(params: WaveParams): void {
+  if (!isInitialized) return;
+  if (!params.wallEnabled) {
+    wallPlaneMesh.visible = false;
+    return;
+  }
+  const ext = params.gridExtent;
+  wallPlaneMesh.visible = true;
+  wallPlaneMesh.position.set(ext, 0, 0);
+  wallPlaneMesh.rotation.y = Math.PI / 2; // face along X axis
+  wallPlaneMesh.scale.set(ext * 2, ext * 2, 1);
 }
 
 export function getCamera(): THREE.PerspectiveCamera { return camera; }
