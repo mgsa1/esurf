@@ -1,24 +1,8 @@
 # TODOS
 
-## TODO-1: BroadcastChannel live-sync
+## TODO-1: Shareable preset URL format
 
-**What:** When params are changed in the visualizer tab, broadcast them to any open game tabs in real-time (currently localStorage only syncs on game page load).
-
-**Why:** Enables a compelling demo where you can tweak wave parameters in the visualizer and watch the game wave update live without navigating away.
-
-**Pros:** Better DX for wave design; makes the parameter-game coupling immediately visible.
-
-**Cons:** Small added complexity (BroadcastChannel + event handler in game page). Must fall back gracefully when no visualizer tab is open.
-
-**Context:** Currently `params.ts` saves to localStorage. The game page reads on load. The BroadcastChannel would be an additive layer — visualizer posts on every param change, game subscribes and applies. localStorage stays as the persistence layer.
-
-**Depends on / blocked by:** Core implementation (localStorage params) must exist first.
-
----
-
-## TODO-2: Shareable preset URL format
-
-**What:** Encode current `WaveParams` as base64 JSON in the URL hash (e.g. `/visualizer.html#eyJBIjo1...`). Both pages read from URL hash on load, falling back to localStorage then defaults.
+**What:** Encode current `WaveParams` as base64 JSON in the URL hash (e.g. `/#eyJBIjo1...`). Read from URL hash on load, falling back to localStorage then defaults.
 
 **Why:** Makes it easy to share interesting wave configurations as links.
 
@@ -26,15 +10,13 @@
 
 **Cons:** URL gets long for complex configs. Need to validate decoded params (malformed input).
 
-**Context:** With 17 parameters, a base64-encoded JSON blob is ~200 chars in the URL hash. Guards needed: JSON.parse in try/catch, schema validation against min/max ranges per param.
-
-**Depends on / blocked by:** Core implementation must exist first. Build after TODO-1 so URL and BroadcastChannel both use the same params format.
+**Context:** With ~17 parameters, a base64-encoded JSON blob is ~200 chars in the URL hash. Guards needed: JSON.parse in try/catch, schema validation against min/max ranges per param.
 
 ---
 
-## TODO-3: WebWorker offloading for surface sampling
+## TODO-2: WebWorker offloading for surface sampling
 
-**What:** Move the `r(θ,φ,t)` computation loop into a WebWorker, returning vertex positions to the main thread via `SharedArrayBuffer` or `postMessage` with transferable `Float32Array`.
+**What:** Move the surface sampling loop into a WebWorker, returning vertex positions to the main thread via `SharedArrayBuffer` or `postMessage` with transferable `Float32Array`.
 
 **Why:** At resolutions above 200×200 (40k vertices), the main thread JS loop may cause frame drops and UI jank. Workers keep the main thread free.
 
@@ -42,38 +24,32 @@
 
 **Cons:** `SharedArrayBuffer` requires cross-origin isolation headers (COOP/COEP). `postMessage` with transfer avoids this but has a round-trip latency. Adds complexity to the animation loop (async vertex delivery).
 
-**Context:** At 100×100 (default), the main thread is fine. This becomes relevant when users push resolution sliders above 150. Start by profiling with Chrome DevTools before implementing.
-
-**Depends on / blocked by:** Core implementation. Profile first — don't implement until there's evidence of jank at realistic resolutions.
+**Context:** At 100×100 (default), the main thread is fine. This becomes relevant when users push resolution sliders above 150. Profile with Chrome DevTools first — don't implement until there's evidence of jank at realistic resolutions.
 
 ---
 
-## TODO-4: phiSlice as a live control
+## TODO-3: Drop marbles onto the wave surface
 
-**What:** Expose φ₀ (the fixed phi angle used in `waveExtractor.ts`) as a slider in both the visualizer and the game UI, stored in `WaveParams`.
+**What:** A "MARBLES" button in the visualizer panel header (next to SURF) that drops a batch of colorful marbles onto the 3D wave surface. Marbles fall under gravity, bounce off the surface using reflection physics, and scatter based on wave slope and motion. Purely visual/fun — no rider collision.
 
-**Why:** φ₀ is currently hard-coded to π/4. Changing it sweeps a different latitude band of the 3D surface, producing strong slope and shape variation for free — no extractor rewrite needed, no extra sampling cost.
+**Why:** Makes the wave surface tangible and interactive. Watching marbles bounce and scatter reveals the wave's shape, slope, and motion in a way that static geometry doesn't.
 
-**Pros:** High bang-for-buck. One new `WaveParams` field + one slider + remove the hard-coded constant from `waveExtractor.ts`. Dramatically expands the gameplay variety available from the existing fixed-slice strategy, making it feel like a new control without paying for a more expensive projection method.
+**How:**
+- New file: `src/visualizer/marbles3d.ts`
+- Pre-allocated ring buffer (48 marbles max), same pattern as `gameMode.ts` particle system
+- THREE.Points with per-vertex colors (6-color pixel art palette: coral, teal, yellow, mint, pink, seafoam)
+- Each click spawns 5–10 marbles at random (x, y) within `gridExtent`, high z, downward velocity only
+- Physics per frame: gravity → integrate → bounce detection against `surfaceZ(x, y, params, t)`
+- Bounce: compute 3D surface normal via finite differences on `surfaceZ`, reflect velocity, scale by restitution (~0.65)
+- Wave push: add an upward boost on bounce so rising crests launch marbles higher (estimate `dz/dt` via finite difference on `surfaceZ`)
+- Settle/lifetime cleanup: kill marbles when speed < 0.25 or age > 15s
+- Button hidden during SURF mode (already handled — it's inside `#controls-panel` which hides)
+- Update marbles in the `else` branch of the main loop (visualizer-only, not during SURF mode)
 
-**Cons:** φ₀ near 0 or π makes `sin(φ)` → 0, collapsing x-coordinates to a point (degenerate wave). Guard: clamp slider to [0.1, π - 0.1].
+**Key physics detail:** Marbles start with only downward velocity. On first bounce off a sloped surface, normal reflection converts vertical momentum into horizontal — marbles naturally scatter on slopes and stay put on flat water.
 
-**Context:** `waveExtractor.ts` is already the designated swap point for projection strategies. The constant `π/4` on line N is the only thing that needs to become a param lookup. Add `phiSlice: number` to `WaveParams` with default π/4, min 0.1, max ~2.8.
+**Pros:** Low complexity, high visual payoff. Zero-cost when idle (skip update/draw when no marbles alive). Reuses existing patterns (ring buffer, THREE.Points, `surfaceZ`).
 
-**Depends on / blocked by:** Core implementation (Step 2). Trivial to add in or after Step 5.
+**Cons:** 4–6 extra `surfaceZ` calls per marble per frame for normal computation (finite differences). At 48 marbles that's ~240 trig evaluations — negligible.
 
----
-
-## TODO-5: Animated foam spray on wave crest
-
-**What:** Replace the static sin()-scatter foam dots on the wave crest with short-lived pixel bursts. At each frame, sample the 3–5 highest-velocity crest points (where the wave slope changes most steeply). At those x-positions, emit a 2–3px pixel burst that persists for 2–3 frames then fades (simple alpha decay on a small particle array).
-
-**Why:** The current `sin(x * 0.7 + t * 2) > 0.6` scatter is deterministic and visually regular — it reads as a pattern, not foam. Velocity-driven bursts make the foam feel physically responsive to the wave shape.
-
-**Pros:** Significantly improves visual fidelity at the game's most visually prominent feature (the wave crest) for minimal performance cost (~10 particles max). Stays within the 480×270 pixel art aesthetic. Makes each wave preset feel distinctly different (choppy waves foam more than gentle ones).
-
-**Cons:** Requires tracking a small particle array in renderer2d.ts across frames (tiny bit of state). Must compute wave velocity (delta of heights between frames — one extra Float32Array of size thetaRes).
-
-**Context:** The foam is currently drawn in `renderer2d.ts` layer 2e. The particle array would live in the renderer module's closure. Wave velocity = `heights[i] - prevHeights[i]` per frame. Threshold for burst: `|velocity| > 0.15` (tune to taste).
-
-**Depends on / blocked by:** Core implementation (Step 4). Add after the basic wave renderer is working.
+**Depends on / blocked by:** Core visualizer implementation (renderer3d, trochoidal math).

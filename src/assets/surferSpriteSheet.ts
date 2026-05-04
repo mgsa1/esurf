@@ -1,7 +1,7 @@
 /**
  * Programmatic pixel art sprite sheet for the 3D billboard surfer.
  *
- * 6 frames × 48×48 pixels. Side-view profile matching surfer_sprite_front.png palette.
+ * 6 frames × 48×48 pixels. Side-view profile, retrowave palette.
  * Generates a canvas texture at runtime — no external PNG dependency.
  *
  * Frame indices:
@@ -24,7 +24,7 @@
  */
 
 // ============================================================================
-// Palette — matched to existing surfer_sprite_front/back.png
+// Palette
 // ============================================================================
 
 const PAL: Record<string, string> = {

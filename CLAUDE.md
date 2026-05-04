@@ -1,57 +1,25 @@
 # Architectural Decisions (locked in eng review 2026-03-18)
 
-## Pages
-Two separate Vite pages:
-- `index.html` → `src/game/main.ts` — 2D pixel art surf game (1980s California sunset beach style)
-- `visualizer.html` → `src/visualizer/main.ts` — 3D mathematical surface visualizer
+## Page
+Single Vite page:
+- `index.html` → `src/visualizer/main.ts` — 3D mathematical surface visualizer with a third-person SURF mode
 
-## 3D → 2D mapping
-The gameplay is strictly 2D. The surfable wave is a 2D parametric curve obtained from a θ-slice of the 3D surface.
-
-**Why θ-slice and not φ-slice:**
-- A fixed φ defines a cone (z/r = cos(φ) = const), which never reaches z = 0 for φ < π/2. It cannot span the wave face to the ocean floor.
-- A fixed θ defines a flat vertical half-plane through the z-axis. Sweeping φ from phiMin to phiMax traces the wave face naturally from the top (φ ≈ 0, z ≈ sz·A) down to the ocean floor (φ = π/2, z = 0 exactly).
-
-Define:
-- `simTime += dt * timeScale`
-- `thetaSlice` = fixed θ angle for the game plane (WaveParams field, default 0)
-
-For each φ in `[phiMin, phiMax]`:
-- `[x, y, z] = computePoint(thetaSlice, φ, simTime, params)`
-- `h = sqrt(x² + y²)` — in-plane horizontal distance from z-axis
-- `xs[i] = i / (phiRes - 1)` — uniform [0,1] for rendering
-- `zs[i] = z`
-- `slopes[i] = dz/dh` — from central differences on h and z
-
-The gameplay wave is the sampled 2D curve `(xs[i], zs[i])` with slopes for gravity physics.
-
-Implemented in `src/math/waveExtractor.ts` (standalone file — swap point for future strategies).
-
-## Parameter sharing
-localStorage (`esurf-params` key). Both pages read on load, visualizer writes on every change.  
+## Parameter persistence
+localStorage (`esurf-params` key). The visualizer writes on every slider change.
 `loadParams()` must try/catch and fall back to `getDefaultParams()`.
-
-## 2D canvas
-Internal resolution `480×270`, CSS-upscaled to fill viewport with `image-rendering: pixelated`.
 
 ## 3D geometry updates
 Pre-allocated `Float32Array` position buffer. Update in-place per frame, set `attr.needsUpdate = true`. Never rebuild geometry.
 
-## Noise
-3D value noise (hash-based integer lookup + trilinear lerp). ~20 lines, deterministic, zero dependencies.
-
 ## Types
-All shared interfaces in `src/types.ts`: `WaveParams`, `SurfaceData`, `WaveData2D`, `PlayerState`, `Preset`.
+All shared interfaces in `src/types.ts`: `WaveParams`, `SurfaceData`, `Preset`.
 
 ## Runtime guards (critical — silent failures without these)
 1. `loadParams()`: try/catch → fall back to `getDefaultParams()`
-2. `computeRadius()`: cycle `t = t % (2π / max(omega, omega2, 0.001))` before `sin()` to prevent float overflow
-3. `waveExtractor`: guard `phiRes >= 3`
-4. `player.ts`: clamp player sample position to `[0, waveData.xs.length - 1]` before slope lookup
-5. `waveExtractor`: if `abs(h[i+1] - h[i-1]) < 1e-6`, set slope to `0`
+2. Trochoidal phase: cycle `t = t % (2π / max(omega, 0.001))` before `sin()`/`cos()` to prevent float overflow
 
 ## Design system
-All visual decisions are in `DESIGN.md`. Steps 3 and 4 reference it for colors, typography, layout, and component specs.
+Visual decisions live in `DESIGN.md`.
 
 ---
 
@@ -68,10 +36,9 @@ Set up the Vite + TypeScript + Three.js project for esurf.
 
 Create:
 - package.json with dependencies: vite, typescript, three, @types/three
-- vite.config.ts: multi-page build with input { game: 'index.html', visualizer: 'visualizer.html' }
+- vite.config.ts: default single-page build (Vite picks up index.html automatically)
 - tsconfig.json: strict mode, moduleResolution bundler, target ES2020
-- index.html: game page shell, links to src/game/main.ts via <script type="module">
-- visualizer.html: visualizer page shell, links to src/visualizer/main.ts via <script type="module">
+- index.html: visualizer page shell, links to src/visualizer/main.ts via <script type="module">
 - src/types.ts: all shared TypeScript interfaces —
     WaveParams (
       A, B1, B2, kTheta, kPhi, omega, omega2, delta, N, nScale,
@@ -80,8 +47,6 @@ Create:
       timeScale, thetaSlice
     ),
     SurfaceData (typed array of 3D points),
-    WaveData2D (parallel Float32Arrays: xs, zs, slopes, all length phiRes),
-    PlayerState (sampleIndex, z, vx, vz, onGround: boolean),
     Preset (name: string, params: WaveParams)
 - src/store/params.ts:
     saveParams(p: WaveParams): void (localStorage),
@@ -92,9 +57,9 @@ Create:
     N=0.5, nScale=1, sx=1, sy=1, sz=1,
     thetaMin=0, thetaMax=2π, phiMin=0.1, phiMax=π-0.1, thetaRes=80, phiRes=60,
     timeScale=1, thetaSlice=0
-- Folder structure (empty index files are fine): src/math/, src/game/, src/visualizer/, src/store/
+- Folder structure (empty index files are fine): src/math/, src/visualizer/, src/store/
 
-Do not implement rendering or game logic. Just the scaffold, types, and store.
+Do not implement rendering yet. Just the scaffold, types, and store.
 
 
 Step 2 - Math layerImplement the math layer for esurf. Reference src/types.ts for all types.
@@ -133,28 +98,6 @@ src/math/sampler.ts
   Pre-allocates Float32Array of size thetaRes * phiRes * 3 (x,y,z interleaved).
   Writes into an existing buffer to avoid allocation in the hot loop (accept buffer as parameter).
   Export: sampleSurface(params: WaveParams, t: number, buffer: Float32Array): SurfaceData
-
-src/math/waveExtractor.ts
-  The gameplay is strictly 2D and is derived from a θ-slice of the 3D surface.
-
-  Fix θ = params.thetaSlice (a flat vertical half-plane through the z-axis).
-  Sweep φ from params.phiMin to params.phiMax in params.phiRes steps.
-
-  For each φ_i:
-    [x, y, z] = computePoint(thetaSlice, φ_i, simTime, params)
-    xs[i] = i / (phiRes - 1)          // uniform [0,1] for rendering
-    zs[i] = z
-    rawH[i] = sqrt(x² + y²)           // in-plane horizontal distance
-
-  Compute slopes from central differences on rawH and zs:
-    slopes[i] = (zs[next] - zs[prev]) / (rawH[next] - rawH[prev])
-
-  Guard:
-    if phiRes < 3, throw Error('phiRes must be >= 3')
-    if abs(rawH[next] - rawH[prev]) < 1e-6, set slopes[i] = 0
-
-  Export:
-    extract2DWave(params: WaveParams, simTime: number): WaveData2D
 
 src/presets.ts
   Export PRESETS: Preset[] with exactly four entries:
@@ -280,7 +223,6 @@ visualizer.html
 
   Panel header row:
   - "esurf" title (Press Start 2P, 11px, #C8C8E8) left
-  - "Play Game →" link (#00FFCC) right
 
   Three.js canvas clear color: #0A0A1A.
 
@@ -293,191 +235,28 @@ visualizer.html
   - if context creation fails, show "WebGL not available." centered (#FF4444)
   - sliders still work
 
-Step 4 - 2D Pixel art beach game
-
-Implement the 2D pixel art surf game for esurf.
-
-Visual style:
-1980s California sunset beach pixel art.
-
-Assets in src/assets/:
-- sky_background.png
-- beach_foreground.png
-- surfer_sprite_front.png
-- surfer_sprite_back.png
-
-Create:
-
-src/game/renderer2d.ts
-  Internal canvas: 480×270 pixels.
-  CSS: width 100%, image-rendering: pixelated.
-  Follow DESIGN.md "Wave Rendering Spec" for all colors and layer logic.
-
-  Coordinate mapping helpers (export from this file for player.ts to use):
-    normalizeXToScreen(xNorm) = xNorm * 480
-    screenY(z) = clamp(WAVE_CENTER_Y - (z - Z_BASELINE) * WAVE_SCALE, 20, 240)
-
-  Choose sensible constants for:
-    Z_BASELINE based on default phiBase / default parameters
-    WAVE_CENTER_Y and WAVE_SCALE for stable on-screen framing
-
-  Render layers in order (back to front):
-    1. sky_background.png
-       - drawImage stretched to fill 480×270
-       - if not yet loaded, fill #1E0A3C
-
-    2. Wave body — from WaveData2D:
-       a. Build crest path: for each sample use screenX = wave.xs[i] * 480, screenY = screenY(wave.zs[i])
-       b. Fill crest-to-bottom path with #1A4A9F (primary wave body)
-       c. Offset crest path down by +8px, fill with #0F2A6E (depth stripe — layered ocean look)
-       d. Draw crest stroke 1px: #5299DC
-       e. Foam dots: for each screenX at step 8, if sin(screenX * 0.7 + simTime * 2) > 0.6 draw a 2×1 white (#FFFFFF) rect at (screenX, crestY)
-
-    3. beach_foreground.png
-       - drawImage(img, 0, 220, 480, 50) anchored to bottom
-       - if not loaded, skip
-
-    4. Surfer sprite
-       - use surfer_sprite_front.png (or back if vx < 0)
-       - px = Math.round(wave.xs[Math.round(playerState.sampleIndex)] * 480 - 8)
-       - py = Math.round(screenY(playerState.z) - 24)
-       - drawImage(sprite, px, py, 16, 24)
-
-  Asset loading:
-  - preload all 4 images on init
-  - game renders immediately; assets appear as they load
-
-  Export:
-    initRenderer(canvas: HTMLCanvasElement): void
-    drawFrame(wave: WaveData2D, player: PlayerState, simTime: number): void
-
-src/game/player.ts
-  PlayerController class.
-
-  State:
-    PlayerState — sampleIndex (0 to thetaRes-1, float), z, vx, vz, onGround
-
-  update(
-    wave: WaveData2D,
-    input: { left: boolean, right: boolean, jump: boolean },
-    dt: number
-  ): void
-
-    - Clamp sampleIndex to [0, wave.xs.length - 1] before any lookup (critical guard).
-    - On ground:
-      - move along the sampled wave by updating sampleIndex
-      - use the local slope from wave.slopes at the current sample as the authoritative incline
-      - adjust motion using slope
-      - apply friction
-      - snap z to the wave.zs value at current sample
-      - if jump pressed, set vz = jumpImpulse and onGround = false
-    - Airborne:
-      - apply gravity to vz
-      - advance z by vz * dt
-      - advance sampleIndex by vx * dt
-      - land when z <= wave.zs at current sample
-
-  Export:
-    class PlayerController with getState(): PlayerState
-
-src/game/controls.ts
-  Track keydown/keyup for ArrowLeft, ArrowRight, Space.
-  Export:
-    initControls(): void
-    getInput(): { left: boolean, right: boolean, jump: boolean }
-
-src/game/main.ts
-  Load params with loadParams() (fallback to getDefaultParams()).
-  Init canvas (#game-canvas), renderer2d, player (start at sampleIndex = thetaRes / 2), controls.
-
-  Maintain simulation time separately:
-    simTime += dt * params.timeScale
-
-  requestAnimationFrame loop:
-    - compute dt from rAF timestamps
-    - clamp dt to a safe max (e.g. 0.05)
-    - increment simTime using timeScale
-    - extract2DWave(params, simTime) → wave
-    - player.update(wave, getInput(), dt)
-    - drawFrame(wave, player.getState(), simTime)
-
-index.html
-  Load "Press Start 2P" from Google Fonts.
-  Page background: #0D0A1A.
-  Canvas centered with margin:auto in a flex container.
-
-  #game-canvas:
-  - 480×270 internal resolution
-  - CSS width: 100vw
-  - CSS height: 100vh
-  - object-fit: contain
-  - image-rendering: pixelated
-
-  HUD overlay (position:absolute, pointer-events:none except buttons):
-    Top-left:
-      "esurf" in Press Start 2P, 10px, #FFFFFF
-      wrapped in pill (see DESIGN.md "HUD pills")
-    Top-right:
-      "Open Visualizer →" button
-      Press Start 2P, 8px, #FFFFFF
-      same pill style
-      pointer-events:auto
-    Bottom-center:
-      "← → SPACE" hint
-      Press Start 2P, 7px, rgba(255,255,255,0.4)
-      no pill — ghost text only
-
-  Both top pills:
-  - top: 12px
-  - padding: 4px 8px
-  - border-radius: 4px
-  - background: rgba(0,0,0,0.55)
-  - border: 1px solid rgba(255,255,255,0.15)
-
-  Mobile notice:
-  - if window.innerWidth < 768, show centered overlay
-    "Desktop only — use arrow keys + space"
-    Press Start 2P, 8px, rgba(0,0,0,0.75) bg
-
-  Link to src/game/main.ts.
-
-Step 5 - Integration pass and readme
+Step 4 - Integration pass and readme
 
 Final integration and polish pass for esurf.
 
 1. Verify the runtime guards from:
    - src/store/params.ts
    - src/math/parametric.ts
-   - src/math/waveExtractor.ts
-   - src/game/player.ts
 
    Add any that are missing.
 
 2. Verify the full flow works:
    - npm run dev starts without TypeScript errors
-   - Game page (/) loads with default params and a visible animated wave
-   - Surfer responds to ArrowLeft, ArrowRight, Space
-   - Visualizer page (/visualizer.html) loads with the Three.js point cloud
+   - Visualizer page (/) loads with the Three.js mesh
    - Changing a slider in the visualizer updates the surface in real-time
-   - Navigating from visualizer → game shows the wave matching the last-saved params
-   - Each of the 4 presets produces a visually distinct wave on both pages
+   - Each preset produces a visually distinct surface
 
 3. Write README.md covering:
    - Local setup: npm install && npm run dev
    - The parametric equation: explain each parameter in plain English
-   - 3D → 2D mapping:
-     "The gameplay wave is a 2D parametric XZ cross-section from a time-varying φ-slice.
-      For each θ sample, compute x(θ,t) and z(θ,t) from the 3D surface,
-      then derive local slope as dz/dx from neighboring samples."
-   - Performance notes:
-     BufferAttribute.needsUpdate, 480×270 upscaled canvas, value noise, pre-allocated buffers
-   - How to add a new parametric equation:
-     implement a new equation function matching the computeRadius signature,
-     add a Preset to src/presets.ts
-   - Controls:
-     ArrowLeft/Right to move, Space to jump
+   - Performance notes: BufferAttribute.needsUpdate, value noise, pre-allocated buffers
+   - How to add a new parametric equation: implement a new equation function matching the computeRadius signature and add a Preset to src/presets.ts
 
 4. Fix any broken imports, type errors, or runtime errors found during verification.
 
-Do not add a score system.
 Keep the implementation focused on a stable, fun physics toy.

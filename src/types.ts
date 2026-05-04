@@ -1,21 +1,16 @@
 /**
  * Shared TypeScript interfaces for esurf.
  *
- * Wave model: single trochoidal (Gerstner) wave propagating in the +x direction.
+ * Wave model: superposition of two trochoidal (Gerstner) wave sources.
  *
  *   k  = 2π / wavelength
  *   ω  = speedFactor · √(9.81 · k)        (deep-water dispersion × user factor)
  *
- * Wave surface height:
- *   surfaceZ(x, t) = amplitude · cos(k·x − ω·t)
+ * Wave surface height (per source):
+ *   z(x, y, t) = amplitude · cos(k·r − ω·t)        r = √((x−ox)² + (y−oy)²)
  *
- * Volumetric acceleration at (worldX, worldZ, t):
- *   ax = −amplitude · g · k · exp(k · worldZ) · sin(k·worldX − ω·t)
- *   az =  amplitude · g · k · exp(k · worldZ) · cos(k·worldX − ω·t) − g
- *
- * The exp(k·worldZ) factor decays exponentially below still water (worldZ = 0),
- * giving physically correct wave influence throughout the water column.
- * The surfer moves freely in 2D (worldX, worldZ) driven by this field.
+ * Total surface = z₁ + z₂. The visualizer renders this as a 3D mesh; the
+ * third-person SURF mode lets the rider move freely in (worldX, worldY).
  */
 
 /**
@@ -39,11 +34,11 @@ export interface WaveParams {
   gridRes: number;
   /** 3D visualizer grid half-width in world units (10–50). */
   gridExtent: number;
-  /** Distance of the 2D game plane from the origin along the y-axis (0–30). */
+  /** Y-axis offset of the slice visualised in the visualizer (gold profile line + pink plane). */
   planeOffset: number;
-  /** World-space X spawn coordinate for first-person game mode (-30–30). */
+  /** World-space X spawn coordinate for SURF mode (-30–30). */
   spawnX: number;
-  /** World-space Y spawn coordinate for first-person game mode (-30–30). */
+  /** World-space Y spawn coordinate for SURF mode (-30–30). */
   spawnY: number;
 
   // ---- Wave 2 (secondary, configurable origin) ----
@@ -73,39 +68,6 @@ export interface WaveParams {
  * Typed array for performance — pre-allocated, no per-frame GC.
  */
 export type SurfaceData = Float32Array;
-
-/**
- * Player state — 2D body in the wave cross-section (xz plane).
- *
- * worldX: position along wave propagation direction (world units)
- * worldZ: height above/below still water level (0 = still water surface)
- *
- * Grounded motion is governed by groundSpeed (scalar along local tangent).
- * Airborne motion uses airVelX / airVelZ (screen-space ballistics).
- * vx / vz are derived each frame for rendering (sprite direction, etc.).
- */
-export interface PlayerState {
-  worldX: number;
-  worldZ: number;
-  /** Scalar speed along local wave tangent. Primary authority when grounded. */
-  groundSpeed: number;
-  /** Carve engagement from -1 (full backside) to +1 (full frontside). */
-  edge: number;
-  /** True when in contact with the wave surface. */
-  grounded: boolean;
-  /** Horizontal velocity — only authoritative when airborne. */
-  airVelX: number;
-  /** Vertical velocity — only authoritative when airborne. */
-  airVelZ: number;
-  /** Seconds remaining before next pump is allowed. */
-  pumpCooldown: number;
-  /** Derived horizontal velocity (from groundSpeed * tangent.x or airVelX). */
-  vx: number;
-  /** Derived vertical velocity (from groundSpeed * tangent.z or airVelZ). */
-  vz: number;
-  /** True when in a deep carve (|edge| > 0.8) — used for visual crouch. */
-  isCrouching: boolean;
-}
 
 /**
  * A named preset — a WaveParams snapshot with a display name.

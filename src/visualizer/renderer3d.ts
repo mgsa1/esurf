@@ -254,7 +254,7 @@ export function init(canvas: HTMLCanvasElement): boolean {
   wallPlaneMesh.visible = false;
   scene.add(wallPlaneMesh);
 
-  // ---- Wave profile at y = 0: the actual 2D gameplay wave ----
+  // ---- Wave profile at y = planeOffset: a cross-section of the surface ----
   // Sampled each frame via updateGamePlane(); drawn as a warm gold line.
   gameProfileBuffer = new Float32Array(PROFILE_SAMPLES * 3);
   const profileGeo = new THREE.BufferGeometry();

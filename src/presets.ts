@@ -24,8 +24,8 @@ export const PRESETS: Preset[] = [
 
   /**
    * crossSeas — two wave sources colliding at an angle.
-   * Creates a dynamic interference pattern in 3D; the 2D slice
-   * alternates between tall peaks and flat cancellations.
+   * Creates a dynamic interference pattern that alternates between
+   * tall peaks and flat cancellations as the two fronts pass.
    */
   preset('crossSeas', {
     amplitude: 3.5,
