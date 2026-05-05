@@ -17,8 +17,10 @@
 
 import { loadParams, saveParams } from '../store/params';
 import { sampleSurface } from '../math/sampler';
+import { wave1Z, wave2Z } from '../math/trochoidal';
 import { init, update, updateGamePlane, updateOriginMarkers, updateWallMarker, render } from './renderer3d';
-import { enterGameMode, exitGameMode, isGameModeActive, updateGameMode, respawnPlayer } from './gameMode';
+import { enterGameMode, exitGameMode, isGameModeActive, updateGameMode, respawnPlayer, restartRun } from './gameMode';
+import { getHighScore } from '../game/highscore';
 import { initControls, initTimeControl } from './uiControls';
 import type { WaveParams } from '../types';
 
@@ -72,10 +74,11 @@ let wave2Epochs: WaveEpoch[] = [];
 let wallEpochs: WallEpoch[] = [];
 
 /** Wave1 params that trigger a new epoch when changed. */
-const WAVE1_KEYS: (keyof WaveParams)[] = ['amplitude', 'wavelength', 'speedFactor'];
+const WAVE1_KEYS: (keyof WaveParams)[] = ['amplitude', 'wavelength', 'speedFactor', 'wave1Mode', 'wave1Direction'];
 /** Wave2 params that trigger a new epoch when changed. */
 const WAVE2_KEYS: (keyof WaveParams)[] = [
-  'wave2Enabled', 'wave2OriginX', 'wave2OriginY',
+  'wave2Enabled', 'wave2Mode', 'wave2Direction',
+  'wave2OriginX', 'wave2OriginY',
   'wave2Amplitude', 'wave2Wavelength', 'wave2SpeedFactor',
 ];
 /** Wall params that trigger a new wall epoch when changed. */
@@ -265,12 +268,18 @@ function isSteady(epochs: WaveEpoch[], t: number, gridDiag: number): boolean {
 function makeZOverride(t: number, p: WaveParams): ((x: number, y: number) => number) | undefined {
   const gridDiag = p.gridExtent * Math.SQRT2;
 
+  // Planar waves have no ring propagation — bypass epoch path for those sources.
+  const planar1 = p.wave1Mode === 'planar';
+  const planar2 = p.wave2Mode === 'planar';
+
   // Prune old epochs that are fully superseded
-  pruneEpochs(wave1Epochs, t, gridDiag);
-  pruneEpochs(wave2Epochs, t, gridDiag);
+  if (!planar1) pruneEpochs(wave1Epochs, t, gridDiag);
+  if (!planar2) pruneEpochs(wave2Epochs, t, gridDiag);
   pruneWallEpochs(t, p.gridExtent);
 
-  const waveSteady = isSteady(wave1Epochs, t, gridDiag) && isSteady(wave2Epochs, t, gridDiag);
+  const wave1Steady = planar1 || isSteady(wave1Epochs, t, gridDiag);
+  const wave2Steady = planar2 || isSteady(wave2Epochs, t, gridDiag);
+  const waveSteady = wave1Steady && wave2Steady;
   const wSteady = isWallSteady(t, p.gridExtent);
   const wallActive = wallEpochs.length > 0 && wallEpochs[0].enabled && wallEpochs[0].reflection > 0;
 
@@ -283,15 +292,18 @@ function makeZOverride(t: number, p: WaveParams): ((x: number, y: number) => num
   const steadyRefl = wSteady ? (wallActive ? wallEpochs[0].reflection : 0) : -1;
 
   return (x: number, y: number): number => {
-    let z = computeCausalWave(x, y, t, wave1Epochs, 0)
-          + computeCausalWave(x, y, t, wave2Epochs, 0);
+    const wave1At = planar1 ? wave1Z(x, y, p, t) : computeCausalWave(x, y, t, wave1Epochs, 0);
+    const wave2At = planar2 ? wave2Z(x, y, p, t) : computeCausalWave(x, y, t, wave2Epochs, 0);
+    let z = wave1At + wave2At;
 
     // Wall reflection: per-point coefficient from wall epochs, then mirror source
     const refl = steadyRefl >= 0 ? steadyRefl : computeWallReflection(wallX - x, t, 0);
     if (refl > 0) {
       const mx = 2 * wallX - x;
-      z += refl * computeCausalWave(mx, y, t, wave1Epochs, 0);
-      z += refl * computeCausalWave(mx, y, t, wave2Epochs, 0);
+      const wave1Mirror = planar1 ? wave1Z(mx, y, p, t) : computeCausalWave(mx, y, t, wave1Epochs, 0);
+      const wave2Mirror = planar2 ? wave2Z(mx, y, p, t) : computeCausalWave(mx, y, t, wave2Epochs, 0);
+      z += refl * wave1Mirror;
+      z += refl * wave2Mirror;
     }
 
     return z;
@@ -335,6 +347,25 @@ function main() {
     respawnBtn.addEventListener('click', () => respawnPlayer(params, simTime));
   }
 
+  const endRestartBtn = document.getElementById('end-restart-btn');
+  if (endRestartBtn) {
+    endRestartBtn.addEventListener('click', () => restartRun());
+  }
+  const endExitBtn = document.getElementById('end-exit-btn');
+  if (endExitBtn) {
+    endExitBtn.addEventListener('click', () => exitGameMode());
+  }
+
+  // Wave score-potential + best-score preview in the editor
+  function updateWaveBestPreview() {
+    const el = document.getElementById('wave-best-display');
+    if (!el) return;
+    const best = getHighScore(params);
+    el.textContent = best > 0 ? `BEST  ${best.toLocaleString()}` : 'NO BEST YET';
+    el.style.color = best > 0 ? '#FFB800' : 'rgba(200,200,232,0.4)';
+  }
+  updateWaveBestPreview();
+
   initControls(controlsPanel, params, (newParams: WaveParams) => {
     const mergedParams = { ...newParams, timeScale: params.timeScale };
 
@@ -354,6 +385,7 @@ function main() {
     const zFn = makeZOverride(simTime, params);
     const surface = sampleSurface(params, simTime, surfaceBuffer, zFn);
     update(surface, params.gridRes);
+    updateWaveBestPreview();
   });
 
   if (timePanel) {

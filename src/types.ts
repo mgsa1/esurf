@@ -21,7 +21,14 @@
  * where crests coincide and destructive interference where a crest meets a trough.
  */
 export interface WaveParams {
-  // ---- Wave 1 (primary, origin fixed at 0,0) ----
+  // ---- Wave 1 (primary) ----
+  /**
+   * 'radial': concentric rings emanating from origin (0,0). Original behavior.
+   * 'planar': parallel crests rolling in a fixed direction. Suited to surfing.
+   */
+  wave1Mode: 'radial' | 'planar';
+  /** Wave 1 propagation direction in radians (planar mode only). 0 = +X, π/2 = +Y. */
+  wave1Direction: number;
   /** Wave crest height above still water in world units (0.5–8). */
   amplitude: number;
   /** Spatial wavelength in world units (5–60). k = 2π/wavelength. */
@@ -41,12 +48,19 @@ export interface WaveParams {
   /** World-space Y spawn coordinate for SURF mode (-30–30). */
   spawnY: number;
 
-  // ---- Wave 2 (secondary, configurable origin) ----
+  // ---- Wave 2 (secondary) ----
   /** Enable the second wave source. When false, wave 2 contributes nothing. */
   wave2Enabled: boolean;
-  /** World-space X coordinate of the wave 2 origin (-250–250). */
+  /**
+   * 'radial': concentric rings from (wave2OriginX, wave2OriginY).
+   * 'planar': parallel crests rolling in wave2Direction (origin ignored).
+   */
+  wave2Mode: 'radial' | 'planar';
+  /** Wave 2 propagation direction in radians (planar mode only). */
+  wave2Direction: number;
+  /** World-space X coordinate of the wave 2 origin — radial mode only (-250–250). */
   wave2OriginX: number;
-  /** World-space Y coordinate of the wave 2 origin (-250–250). */
+  /** World-space Y coordinate of the wave 2 origin — radial mode only (-250–250). */
   wave2OriginY: number;
   /** Crest height of wave 2 above still water in world units (0–8). */
   wave2Amplitude: number;

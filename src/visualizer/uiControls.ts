@@ -28,10 +28,11 @@ const GROUPS: Array<{ label: string; sliders: SliderConfig[] }> = [
   {
     label: 'WAVE',
     sliders: [
-      { key: 'amplitude',   label: 'amplitude',   min: 0.5,  max: 8,   step: 0.05, desc: 'crest height above still water (0.5–8)' },
-      { key: 'wavelength',  label: 'wavelength',  min: 5,    max: 60,  step: 0.5,  desc: 'spatial period in world units (5–60)' },
-      { key: 'speedFactor', label: 'speedFactor', min: 0.1,  max: 3,   step: 0.05, desc: 'wave speed multiplier (0.1–3)' },
-      { key: 'planeOffset', label: 'planeOffset', min: 0,    max: 30,  step: 0.5,  desc: 'game plane distance from origin (0–30)' },
+      { key: 'amplitude',     label: 'amplitude',   min: 0.5,  max: 8,   step: 0.05, desc: 'crest height above still water (0.5–8)' },
+      { key: 'wavelength',    label: 'wavelength',  min: 5,    max: 60,  step: 0.5,  desc: 'spatial period in world units (5–60)' },
+      { key: 'speedFactor',   label: 'speedFactor', min: 0.1,  max: 3,   step: 0.05, desc: 'wave speed multiplier (0.1–3)' },
+      { key: 'wave1Direction',label: 'direction',   min: 0,    max: 6.283185, step: 0.05, desc: 'planar wave heading in radians (0–2π)' },
+      { key: 'planeOffset',   label: 'planeOffset', min: 0,    max: 30,  step: 0.5,  desc: 'game plane distance from origin (0–30)' },
     ],
   },
   {
@@ -50,20 +51,23 @@ const GROUPS: Array<{ label: string; sliders: SliderConfig[] }> = [
   },
 ];
 
-// Wave 2 sliders (numeric only — the boolean toggle is handled separately)
+// Wave 2 sliders (numeric only — the boolean enable toggle and mode toggle are handled separately).
+// Origin sliders auto-hide when wave2Mode === 'planar'; direction slider auto-hides when 'radial'.
 const WAVE2_SLIDERS: SliderConfig[] = [
+  { key: 'wave2Direction',  label: 'direction',  min: 0,    max: 6.283185, step: 0.05, desc: 'planar wave 2 heading in radians (0–2π)' },
   { key: 'wave2OriginX',    label: 'origin X',   min: -250, max: 250,  step: 0.5,  desc: 'X coordinate of wave 2 center (-250–250)' },
   { key: 'wave2OriginY',    label: 'origin Y',   min: -250, max: 250,  step: 0.5,  desc: 'Y coordinate of wave 2 center (-250–250)' },
-  { key: 'wave2Amplitude',  label: 'amplitude',  min: 0,   max: 8,   step: 0.05, desc: 'crest height of wave 2 (0–8)' },
-  { key: 'wave2Wavelength', label: 'wavelength', min: 5,   max: 60,  step: 0.5,  desc: 'spatial period of wave 2 (5–60)' },
-  { key: 'wave2SpeedFactor',label: 'speedFactor',min: 0.1, max: 3,   step: 0.05, desc: 'speed multiplier of wave 2 (0.1–3)' },
+  { key: 'wave2Amplitude',  label: 'amplitude',  min: 0,    max: 8,    step: 0.05, desc: 'crest height of wave 2 (0–8)' },
+  { key: 'wave2Wavelength', label: 'wavelength', min: 5,    max: 60,   step: 0.5,  desc: 'spatial period of wave 2 (5–60)' },
+  { key: 'wave2SpeedFactor',label: 'speedFactor',min: 0.1,  max: 3,    step: 0.05, desc: 'speed multiplier of wave 2 (0.1–3)' },
 ];
 
 // Preset accent colors
 const PRESET_COLORS: Record<string, { border: string; activeBg: string }> = {
-  longboardCruise: { border: '#00FFCC', activeBg: 'rgba(0,255,204,0.15)' },
-  crossSeas:      { border: '#FF6EB4', activeBg: 'rgba(255,110,180,0.15)' },
-  bigWaveDay:     { border: '#FFB800', activeBg: 'rgba(255,184,0,0.15)' },
+  timeAttackBay:   { border: '#00FFCC', activeBg: 'rgba(0,255,204,0.15)' },
+  bigWaveDay:      { border: '#FFB800', activeBg: 'rgba(255,184,0,0.15)' },
+  crossSeas:       { border: '#FF6EB4', activeBg: 'rgba(255,110,180,0.15)' },
+  longboardCruise: { border: '#9090C0', activeBg: 'rgba(144,144,192,0.15)' },
 };
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -218,6 +222,8 @@ export function initControls(
   // Track all range inputs and number inputs by param key so presets can reset them
   const rangeInputs = new Map<keyof WaveParams, HTMLInputElement>();
   const numInputs   = new Map<keyof WaveParams, HTMLInputElement>();
+  // Non-slider UI elements that need to re-sync when a preset loads
+  const postLoadSync: Array<() => void> = [];
 
   function fireOnChange() { onChange({ ...params }); }
 
@@ -276,6 +282,8 @@ export function initControls(
       });
       btn.style.background = colors.activeBg;
 
+      // Re-sync any non-slider UI (mode toggle, wave2/wall enable badges, etc.)
+      postLoadSync.forEach(fn => fn());
       fireOnChange();
     });
 
@@ -307,6 +315,61 @@ export function initControls(
     const body = document.createElement('div');
     body.style.cssText = 'padding: 4px 14px 10px;';
 
+    // Wave-mode toggle at the top of the WAVE group
+    let directionRow: HTMLElement | null = null;
+    if (group.label === 'WAVE') {
+      const modeRow = document.createElement('div');
+      modeRow.style.cssText = 'display: flex; gap: 4px; margin-bottom: 8px;';
+
+      const radialBtn = document.createElement('button');
+      const planarBtn = document.createElement('button');
+
+      function modeBtnStyle(active: boolean): string {
+        return `
+          flex: 1;
+          font-family: 'Courier New', monospace;
+          font-size: 9px;
+          letter-spacing: 0.06em;
+          padding: 4px 6px;
+          border-radius: 3px;
+          cursor: pointer;
+          border: 1px solid ${active ? '#00FFCC' : '#444460'};
+          background: ${active ? 'rgba(0,255,204,0.10)' : 'transparent'};
+          color: ${active ? '#00FFCC' : '#666680'};
+        `;
+      }
+
+      function syncModeButtons() {
+        radialBtn.textContent = '◯ RADIAL';
+        planarBtn.textContent = '╫ PLANAR';
+        radialBtn.style.cssText = modeBtnStyle(params.wave1Mode === 'radial');
+        planarBtn.style.cssText = modeBtnStyle(params.wave1Mode === 'planar');
+        if (directionRow) {
+          directionRow.style.display = params.wave1Mode === 'planar' ? '' : 'none';
+        }
+      }
+
+      radialBtn.addEventListener('click', () => {
+        if (params.wave1Mode === 'radial') return;
+        params = { ...params, wave1Mode: 'radial' };
+        syncModeButtons();
+        fireOnChange();
+      });
+      planarBtn.addEventListener('click', () => {
+        if (params.wave1Mode === 'planar') return;
+        params = { ...params, wave1Mode: 'planar' };
+        syncModeButtons();
+        fireOnChange();
+      });
+
+      modeRow.appendChild(radialBtn);
+      modeRow.appendChild(planarBtn);
+      body.appendChild(modeRow);
+      // Initial style applied after we build the direction row below
+      setTimeout(syncModeButtons, 0);
+      postLoadSync.push(syncModeButtons);
+    }
+
     group.sliders.forEach(cfg => {
       const { key } = cfg;
       const { row, rangeEl, numEl } = buildRow(
@@ -320,6 +383,10 @@ export function initControls(
       rangeInputs.set(key, rangeEl);
       numInputs.set(key, numEl);
       if (key === 'planeOffset') row.style.display = 'none';
+      if (key === 'wave1Direction') {
+        directionRow = row;
+        if (params.wave1Mode !== 'planar') row.style.display = 'none';
+      }
       body.appendChild(row);
     });
 
@@ -399,7 +466,64 @@ export function initControls(
     updateToggleStyle();
     fireOnChange();
   });
+  postLoadSync.push(updateToggleStyle);
   wave2Body.appendChild(toggleBtn);
+
+  // ---- Wave 2 mode toggle (radial / planar) ----
+  const w2ModeRow = document.createElement('div');
+  w2ModeRow.style.cssText = 'display: flex; gap: 4px; margin-bottom: 8px;';
+  const w2RadialBtn = document.createElement('button');
+  const w2PlanarBtn = document.createElement('button');
+
+  function w2ModeBtnStyle(active: boolean): string {
+    return `
+      flex: 1;
+      font-family: 'Courier New', monospace;
+      font-size: 9px;
+      letter-spacing: 0.06em;
+      padding: 4px 6px;
+      border-radius: 3px;
+      cursor: pointer;
+      border: 1px solid ${active ? '#00FFCC' : '#444460'};
+      background: ${active ? 'rgba(0,255,204,0.10)' : 'transparent'};
+      color: ${active ? '#00FFCC' : '#666680'};
+    `;
+  }
+
+  // Track origin / direction rows by reference so we can hide them per mode
+  const w2RowsByKey = new Map<keyof WaveParams, HTMLElement>();
+
+  function syncW2ModeButtons() {
+    w2RadialBtn.textContent = '◯ RADIAL';
+    w2PlanarBtn.textContent = '╫ PLANAR';
+    w2RadialBtn.style.cssText = w2ModeBtnStyle(params.wave2Mode === 'radial');
+    w2PlanarBtn.style.cssText = w2ModeBtnStyle(params.wave2Mode === 'planar');
+    const planar = params.wave2Mode === 'planar';
+    const dirRow = w2RowsByKey.get('wave2Direction');
+    const oxRow  = w2RowsByKey.get('wave2OriginX');
+    const oyRow  = w2RowsByKey.get('wave2OriginY');
+    if (dirRow) dirRow.style.display = planar ? '' : 'none';
+    if (oxRow)  oxRow.style.display  = planar ? 'none' : '';
+    if (oyRow)  oyRow.style.display  = planar ? 'none' : '';
+  }
+
+  w2RadialBtn.addEventListener('click', () => {
+    if (params.wave2Mode === 'radial') return;
+    params = { ...params, wave2Mode: 'radial' };
+    syncW2ModeButtons();
+    fireOnChange();
+  });
+  w2PlanarBtn.addEventListener('click', () => {
+    if (params.wave2Mode === 'planar') return;
+    params = { ...params, wave2Mode: 'planar' };
+    syncW2ModeButtons();
+    fireOnChange();
+  });
+
+  w2ModeRow.appendChild(w2RadialBtn);
+  w2ModeRow.appendChild(w2PlanarBtn);
+  wave2Body.appendChild(w2ModeRow);
+  postLoadSync.push(syncW2ModeButtons);
 
   WAVE2_SLIDERS.forEach(cfg => {
     const { key } = cfg;
@@ -413,8 +537,12 @@ export function initControls(
     );
     rangeInputs.set(key, rangeEl);
     numInputs.set(key, numEl);
+    w2RowsByKey.set(key, row);
     wave2Body.appendChild(row);
   });
+
+  // Apply initial visibility
+  setTimeout(syncW2ModeButtons, 0);
 
   wave2Details.appendChild(wave2Body);
   container.appendChild(wave2Details);
@@ -491,6 +619,7 @@ export function initControls(
     updateWallToggleStyle();
     fireOnChange();
   });
+  postLoadSync.push(updateWallToggleStyle);
   wallBody.appendChild(wallToggleBtn);
 
   const wallSliderCfg: SliderConfig = {

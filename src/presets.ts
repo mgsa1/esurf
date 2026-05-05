@@ -11,46 +11,66 @@ function preset(name: string, overrides: Partial<WaveParams>): Preset {
 
 export const PRESETS: Preset[] = [
   /**
-   * longboardCruise — mellow, wide swells perfect for cruising.
-   * Long wavelength + low amplitude = gentle slopes, easy to ride.
+   * timeAttackBay — calibrated for the 60-second arcade run.
+   * Planar swells rolling toward the player, moderate amplitude,
+   * tight enough wavelength to spawn frequent gates and tube windows.
    */
-  preset('longboardCruise', {
-    amplitude: 2.5,
-    wavelength: 50,
-    speedFactor: 0.7,
-    gridExtent: 100,
-    planeOffset: 60,
+  preset('timeAttackBay', {
+    wave1Mode: 'planar',
+    wave1Direction: Math.PI,
+    amplitude: 3.5,
+    wavelength: 22,
+    speedFactor: 1.0,
+    gridExtent: 50,
+    spawnX: 0,
+    spawnY: 0,
   }),
 
   /**
-   * crossSeas — two wave sources colliding at an angle.
-   * Creates a dynamic interference pattern that alternates between
-   * tall peaks and flat cancellations as the two fronts pass.
+   * bigWaveDay — steep, fast, closely-spaced planar swells.
+   * High amplitude + short wavelength = aggressive slopes and big air.
+   */
+  preset('bigWaveDay', {
+    wave1Mode: 'planar',
+    wave1Direction: Math.PI,
+    amplitude: 6.0,
+    wavelength: 18,
+    speedFactor: 1.3,
+    timeScale: 1.0,
+    gridExtent: 60,
+  }),
+
+  /**
+   * crossSeas — planar swell + a radial source at an angle.
+   * Creates dynamic interference: tall peaks where they align, flat
+   * cancellations where they cross out of phase.
    */
   preset('crossSeas', {
-    amplitude: 3.5,
-    wavelength: 30,
+    wave1Mode: 'planar',
+    wave1Direction: Math.PI,
+    amplitude: 3.0,
+    wavelength: 26,
     speedFactor: 1.0,
-    gridExtent: 100,
-    planeOffset: 45,
+    gridExtent: 60,
     wave2Enabled: true,
-    wave2OriginX: 70,
-    wave2OriginY: -50,
-    wave2Amplitude: 2.5,
-    wave2Wavelength: 40,
+    wave2OriginX: 30,
+    wave2OriginY: -30,
+    wave2Amplitude: 2.0,
+    wave2Wavelength: 30,
     wave2SpeedFactor: 0.8,
   }),
 
   /**
-   * bigWaveDay — steep, fast, closely-spaced peaks.
-   * High amplitude + short wavelength = aggressive slopes and big air.
+   * longboardCruise — mellow, wide planar swells.
+   * Long wavelength + low amplitude = gentle slopes, low ceiling,
+   * easy survival run for warming up.
    */
-  preset('bigWaveDay', {
-    amplitude: 6.0,
-    wavelength: 18,
-    speedFactor: 1.3,
-    timeScale: 1.2,
-    gridExtent: 100,
-    planeOffset: 35,
+  preset('longboardCruise', {
+    wave1Mode: 'planar',
+    wave1Direction: Math.PI,
+    amplitude: 2.0,
+    wavelength: 40,
+    speedFactor: 0.7,
+    gridExtent: 80,
   }),
 ];

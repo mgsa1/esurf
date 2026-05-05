@@ -27,25 +27,30 @@
 // Palette
 // ============================================================================
 
+/**
+ * 1980s California sunset palette — high-saturation neon-on-cool with
+ * warm rim highlights. Inspired by California Games, OutRun, and SSX.
+ */
 const PAL: Record<string, string> = {
-  o:  '#2A1A0A',   // outline
-  O:  '#3A2A18',   // outline soft
-  '1': '#FFE848',  // hair bright
-  '2': '#E8B820',  // hair mid
-  '3': '#C09018',  // hair dark
-  a:  '#F8D0A0',   // skin light
-  b:  '#E0A870',   // skin mid
-  c:  '#C88850',   // skin dark
-  T:  '#E86828',   // shorts orange
-  t:  '#C85018',   // shorts shadow
-  G:  '#48C868',   // board green
-  g:  '#30A850',   // board dark green
-  Y:  '#E8D830',   // board yellow tip
-  S:  '#E86828',   // board stripe
-  W:  '#FFFFFF',   // white highlight
-  L:  '#C8E8F8',   // spray light
-  l:  '#88C8E8',   // spray mid
-  n:  '#8B6040',   // necklace
+  o:  '#1A0E2A',   // outline (cool dark purple, warmer than black)
+  O:  '#3A1E4A',   // outline soft / shadow
+  R:  '#FF8848',   // sunset rim light (warm orange highlight)
+  '1': '#FFEC60',  // hair bright (sun-bleached gold)
+  '2': '#FFB820',  // hair mid (warm amber)
+  '3': '#C85018',  // hair dark (burnt orange shadow)
+  a:  '#FFD8A8',   // skin light (sun-kissed)
+  b:  '#E89868',   // skin mid (tanned)
+  c:  '#A85838',   // skin dark (deep tan)
+  T:  '#FF3088',   // shorts hot pink
+  t:  '#C81870',   // shorts shadow magenta
+  G:  '#20E8E0',   // board cyan (neon teal)
+  g:  '#1898B0',   // board dark teal
+  Y:  '#FFEC60',   // board golden tip
+  S:  '#FF6EB4',   // board stripe (electric pink)
+  W:  '#FFFFFF',   // pure white highlight
+  L:  '#E8F8FF',   // spray light
+  l:  '#80B8F0',   // spray mid (cool blue)
+  n:  '#FFEC60',   // necklace (gold chain)
 };
 
 /** Frame name → index constants. */
@@ -415,6 +420,16 @@ export function createSpriteSheet(): {
     const frame = FRAMES[f];
     const ox = f * FRAME_WIDTH;
 
+    // Build an opacity mask first so we can compute rim lighting
+    const mask: boolean[] = new Array(FRAME_WIDTH * FRAME_HEIGHT).fill(false);
+    for (let y = 0; y < frame.length && y < FRAME_HEIGHT; y++) {
+      const line = frame[y];
+      for (let x = 0; x < line.length && x < FRAME_WIDTH; x++) {
+        if (line[x] !== '.') mask[y * FRAME_WIDTH + x] = true;
+      }
+    }
+
+    // Pass 1: paint base pixels
     for (let y = 0; y < frame.length && y < FRAME_HEIGHT; y++) {
       const line = frame[y];
       for (let x = 0; x < line.length && x < FRAME_WIDTH; x++) {
@@ -424,6 +439,33 @@ export function createSpriteSheet(): {
         if (color) {
           ctx.fillStyle = color;
           ctx.fillRect(ox + x, y, 1, 1);
+        }
+      }
+    }
+
+    // Pass 2: sunset rim light on the silhouette's right edge.
+    // For each opaque pixel whose immediate right neighbor is transparent,
+    // paint a warm rim pixel one column to the right (extends silhouette by 1px).
+    ctx.fillStyle = PAL.R;
+    for (let y = 0; y < FRAME_HEIGHT; y++) {
+      for (let x = 0; x < FRAME_WIDTH - 1; x++) {
+        if (mask[y * FRAME_WIDTH + x] && !mask[y * FRAME_WIDTH + (x + 1)]) {
+          ctx.fillRect(ox + x + 1, y, 1, 1);
+        }
+      }
+    }
+
+    // Pass 3: top rim — sky-side highlight (cool light blue) along the top edge,
+    // gives a subtle "lit from above" feel for the sunset glow.
+    ctx.fillStyle = '#FFE0B0';
+    for (let y = 1; y < FRAME_HEIGHT; y++) {
+      for (let x = 0; x < FRAME_WIDTH; x++) {
+        if (mask[y * FRAME_WIDTH + x] && !mask[(y - 1) * FRAME_WIDTH + x]) {
+          // Only highlight outline pixels (top of silhouette), not interior
+          const ch = frame[y][x];
+          if (ch === 'o' || ch === 'O') {
+            ctx.fillRect(ox + x, y, 1, 1);
+          }
         }
       }
     }

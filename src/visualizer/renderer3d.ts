@@ -467,16 +467,22 @@ export function updateOriginMarkers(params: WaveParams, t: number): void {
   // Spike bottom sits two combined amplitudes below still water
   const spikeBottom = -(params.amplitude + params.wave2Amplitude) * 2;
 
-  // ---- Wave 1: fixed at (0, 0) ----
-  const z1 = surfaceZ(0, 0, params, t);
-  wave1Ring.position.set(0, 0, 0);
-  wave1SpikeBuf[0] = 0; wave1SpikeBuf[1] = 0; wave1SpikeBuf[2] = spikeBottom;
-  wave1SpikeBuf[3] = 0; wave1SpikeBuf[4] = 0; wave1SpikeBuf[5] = z1;
-  wave1SpikeAttr.needsUpdate = true;
-  wave1Label.position.set(0, 0, z1 + 2.5);
+  // ---- Wave 1: only shown in radial mode (planar has no origin) ----
+  const show1 = params.wave1Mode === 'radial';
+  wave1Ring.visible  = show1;
+  wave1Spike.visible = show1;
+  wave1Label.visible = show1;
+  if (show1) {
+    const z1 = surfaceZ(0, 0, params, t);
+    wave1Ring.position.set(0, 0, 0);
+    wave1SpikeBuf[0] = 0; wave1SpikeBuf[1] = 0; wave1SpikeBuf[2] = spikeBottom;
+    wave1SpikeBuf[3] = 0; wave1SpikeBuf[4] = 0; wave1SpikeBuf[5] = z1;
+    wave1SpikeAttr.needsUpdate = true;
+    wave1Label.position.set(0, 0, z1 + 2.5);
+  }
 
-  // ---- Wave 2: at (wave2OriginX, wave2OriginY), shown only when enabled ----
-  const show2 = params.wave2Enabled;
+  // ---- Wave 2: shown only when enabled AND in radial mode ----
+  const show2 = params.wave2Enabled && params.wave2Mode === 'radial';
   wave2Ring.visible  = show2;
   wave2Spike.visible = show2;
   wave2Label.visible = show2;

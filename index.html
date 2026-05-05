@@ -219,6 +219,12 @@
         <button id="todo-toggle" aria-label="Toggle dev log">DEV LOG</button>
       </div>
     </div>
+    <div id="wave-best-row"
+         style="padding:8px 14px; border-bottom:1px solid #2A2A4A;
+                font-family:'Press Start 2P',monospace; font-size:7px;
+                color:rgba(200,200,232,0.4); letter-spacing:0.12em;">
+      <span id="wave-best-display">NO BEST YET</span>
+    </div>
     <!-- Preset buttons and slider groups injected by uiControls.ts -->
   </div>
 
@@ -230,56 +236,128 @@
     <div id="game-hud" style="display:none; position:absolute; inset:0;
          pointer-events:none; font-family:'Press Start 2P',monospace;">
 
-      <!-- State indicator: top-center -->
-      <div id="hud-state" style="position:absolute; top:16px; left:50%;
+      <!-- Tube vignette: full-screen radial darkening when in tube -->
+      <div id="hud-tube-vignette" style="position:absolute; inset:0; opacity:0;
+           transition:opacity 0.18s ease;
+           background:radial-gradient(ellipse at center,
+             rgba(0,0,0,0) 35%, rgba(0,0,0,0.85) 100%);"></div>
+
+      <!-- Final-wave amber tint -->
+      <div id="hud-final-tint" style="position:absolute; inset:0; opacity:0;
+           transition:opacity 0.4s ease; mix-blend-mode:screen;
+           background:radial-gradient(ellipse at center,
+             rgba(255,140,0,0) 30%, rgba(255,140,0,0.55) 100%);"></div>
+
+      <!-- Score (top-left) -->
+      <div style="position:absolute; top:16px; left:16px; pointer-events:none;">
+        <div style="font-size:6px; color:rgba(255,255,255,0.5);
+                    letter-spacing:0.1em; margin-bottom:4px;">SCORE</div>
+        <div id="hud-score" style="font-size:22px; color:#FFFFFF;
+             text-shadow:0 0 12px rgba(0,255,204,0.5); letter-spacing:0.05em;">0</div>
+        <div id="hud-wave-best" style="font-size:7px; color:rgba(200,200,232,0.55);
+             margin-top:4px; letter-spacing:0.1em;"></div>
+      </div>
+
+      <!-- Combo multiplier (top-center) -->
+      <div id="hud-combo" style="position:absolute; top:18px; left:50%;
+           transform:translateX(-50%); font-size:34px; color:#666680;
+           letter-spacing:0.1em; text-shadow:0 0 16px rgba(0,255,204,0.5);"></div>
+
+      <!-- State label below combo -->
+      <div id="hud-state" style="position:absolute; top:64px; left:50%;
            transform:translateX(-50%); font-size:8px; color:#00FFCC;
            letter-spacing:0.15em; text-shadow:0 0 8px rgba(0,255,204,0.4);">PADDLING</div>
 
-      <!-- Speed bar: bottom-left -->
+      <!-- Run timer (top-right) -->
+      <div style="position:absolute; top:16px; right:16px; text-align:right;">
+        <div style="font-size:6px; color:rgba(255,255,255,0.5);
+                    letter-spacing:0.1em; margin-bottom:4px;">TIME</div>
+        <div id="hud-time" style="font-size:22px; color:#C8C8E8;
+             letter-spacing:0.05em;">60.0</div>
+      </div>
+
+      <!-- Speed bar (bottom-left) -->
       <div style="position:absolute; bottom:48px; left:24px;">
         <div style="font-size:6px; color:rgba(255,255,255,0.5); margin-bottom:4px;
                     letter-spacing:0.1em;">SPEED</div>
-        <div style="width:90px; height:6px; background:rgba(255,255,255,0.15);
+        <div style="width:120px; height:6px; background:rgba(255,255,255,0.15);
                     border-radius:3px; overflow:hidden;">
           <div id="hud-speed-fill" style="height:100%; width:0%; background:#00FFCC;
                border-radius:3px; transition:width 0.05s linear;"></div>
         </div>
       </div>
 
-      <!-- Pump bar: below speed -->
+      <!-- Pump bar (below speed) -->
       <div style="position:absolute; bottom:24px; left:24px;">
         <div style="font-size:6px; color:rgba(255,255,255,0.5); margin-bottom:4px;
                     letter-spacing:0.1em;">PUMP</div>
-        <div style="width:90px; height:6px; background:rgba(255,255,255,0.15);
+        <div style="width:120px; height:6px; background:rgba(255,255,255,0.15);
                     border-radius:3px; overflow:hidden;">
           <div id="hud-pump-fill" style="height:100%; width:0%; background:#00FFCC;
                border-radius:3px; transition:width 0.05s linear;"></div>
         </div>
       </div>
 
-      <!-- Pump timing hint -->
-      <div id="hud-pump-hint" style="position:absolute; bottom:24px; left:122px;
-           font-size:6px; color:#00FFCC; letter-spacing:0.06em;
-           white-space:nowrap; display:none;"></div>
+      <!-- Controls hint (bottom-right) -->
+      <div style="position:absolute; bottom:18px; right:24px; font-size:6px;
+           color:rgba(255,255,255,0.45); text-align:right; letter-spacing:0.08em;
+           line-height:1.85;">A/D CARVE&nbsp;·&nbsp;W/S THRUST&nbsp;·&nbsp;SHIFT PUMP<br>
+           SPACE JUMP/GRAB&nbsp;·&nbsp;A/D AIR-SPIN&nbsp;·&nbsp;W/S FLIP<br>
+           R RESPAWN&nbsp;·&nbsp;ESC EXIT</div>
 
-      <!-- Controls hint: bottom-right -->
-      <div style="position:absolute; bottom:24px; right:24px; font-size:6px;
-           color:rgba(255,255,255,0.35); text-align:right; letter-spacing:0.08em;
-           line-height:1.8;">A/D: CARVE · W: PUMP · S: BRAKE<br>SPACE: JUMP · R: RESPAWN</div>
-
-      <!-- Exit hint: top-right -->
-      <div style="position:absolute; top:16px; right:16px; font-size:6px;
-           color:rgba(255,255,255,0.35); letter-spacing:0.08em;">ESC: EXIT SURF</div>
-
-      <!-- Respawn button: top-left -->
+      <!-- Respawn button -->
       <button id="respawn-btn"
-        aria-label="Respawn at spawn point"
-        style="position:absolute; top:16px; left:16px; pointer-events:auto;
+        aria-label="Restart run"
+        style="position:absolute; top:104px; left:16px; pointer-events:auto;
                font-family:'Press Start 2P',monospace; font-size:6px; color:#FFCC00;
                background:rgba(0,0,0,0.55); border:1px solid rgba(255,204,0,0.4);
                border-radius:3px; padding:5px 8px; cursor:pointer; letter-spacing:0.06em;">
         ↺ RESPAWN
       </button>
+
+      <!-- End-of-run summary screen (overlay) -->
+      <div id="hud-end-screen" style="display:none; position:absolute; inset:0;
+           background:rgba(8,8,20,0.86); backdrop-filter:blur(6px);
+           -webkit-backdrop-filter:blur(6px); align-items:center;
+           justify-content:center; flex-direction:column; pointer-events:auto;">
+        <div style="font-size:14px; color:#00FFCC; letter-spacing:0.18em;
+                    margin-bottom:18px;">RUN COMPLETE</div>
+        <div style="font-size:8px; color:rgba(200,200,232,0.55);
+                    letter-spacing:0.12em; margin-bottom:6px;">SCORE</div>
+        <div id="hud-end-score" style="font-size:36px; color:#FFFFFF;
+             text-shadow:0 0 24px rgba(0,255,204,0.5); margin-bottom:24px;
+             letter-spacing:0.06em;">0</div>
+
+        <div style="display:grid; grid-template-columns:auto auto;
+                    gap:8px 24px; font-size:8px; line-height:1.6;
+                    color:#C8C8E8; letter-spacing:0.08em; margin-bottom:24px;">
+          <div style="color:rgba(200,200,232,0.55);">TOP TRICK</div>
+          <div id="hud-end-trick">—</div>
+          <div style="color:rgba(200,200,232,0.55);">TIME IN TUBE</div>
+          <div id="hud-end-tube">0.0s</div>
+          <div style="color:rgba(200,200,232,0.55);">GATES CLEARED</div>
+          <div id="hud-end-gates">0</div>
+          <div style="color:rgba(200,200,232,0.55);">WAVE BEST</div>
+          <div id="hud-end-best">0</div>
+        </div>
+
+        <div style="display:flex; gap:12px;">
+          <button id="end-restart-btn"
+            style="font-family:'Press Start 2P',monospace; font-size:8px;
+                   color:#00FFCC; background:rgba(0,255,204,0.12);
+                   border:1px solid #00FFCC; border-radius:3px;
+                   padding:8px 16px; cursor:pointer; letter-spacing:0.1em;">
+            ▶ AGAIN
+          </button>
+          <button id="end-exit-btn"
+            style="font-family:'Press Start 2P',monospace; font-size:8px;
+                   color:#C8C8E8; background:transparent;
+                   border:1px solid #444460; border-radius:3px;
+                   padding:8px 16px; cursor:pointer; letter-spacing:0.1em;">
+            ✕ EDIT WAVE
+          </button>
+        </div>
+      </div>
     </div>
     <div id="time-panel">
       <!-- populated by initTimeControl() in main.ts -->
@@ -290,40 +368,53 @@
 
       <h2>DEV LOG</h2>
 
-      <p>A tunable ocean surface you can surf. Design a wave, then ride it.</p>
+      <p>Design a wave, then ride it. The wave you sculpt is the level.</p>
 
       <p style="margin-top:10px;">Target feel: <em style="color:#C8C8E8;">SSX3 meets
-      Dolphin Olympics.</em> Fluid physics, expressive movement, and waves
-      worth exploring.</p>
+      Dolphin Olympics on a 1980s California sunset.</em> Tune the swell, drop in,
+      chain tricks for 60 seconds, beat your best.</p>
 
       <hr class="section-divider">
       <h3>Wave simulator</h3>
       <ul>
-        <li>Slider changes should ripple outward from the origin, not snap the whole surface at once</li>
-        <li>Blend between wave states so edits feel like shaping water, not swapping textures</li>
-        <li>Interference between wave layers — let complex shapes emerge from simple components</li>
+        <li class="done">Slider changes ripple outward from the origin (causal epoch model)</li>
+        <li class="done">Two wave sources — each independently radial or planar</li>
+        <li class="done">Reflective wall boundary with adjustable energy coefficient</li>
+        <li class="done">Interference between wave layers — cross-swells, ripples-on-swell, etc.</li>
         <li>Support more wave types beyond Gerstner (plunging, spilling, reef break profiles)</li>
+        <li>Custom wave editor — draw your own equation</li>
       </ul>
 
       <hr class="section-divider">
       <h3>Game feel</h3>
       <ul>
-        <li>Carving should feel like cutting, not steering — tight edge response, wide arcs at speed</li>
-        <li>Pump timing that rewards rhythm — compress downhill, extend uphill, build real speed</li>
-        <li>Air that flows from the approach — launch angle, speed, and face steepness all matter</li>
-        <li>Landing quality: come in flat and keep speed, come in sideways and eat it</li>
-        <li>The wave gives you energy — skill decides what you do with it</li>
+        <li class="done">Locked controls — A/D carve & spin, W/S thrust & flip, Shift pump, Space jump/grab</li>
+        <li class="done">Pump rhythm — Shift while sloping downhill builds energy, mistimed drains it</li>
+        <li class="done">Real wipeouts — bad landing alignment or nose-diving costs the run's combo</li>
+        <li class="done">Tube ride detection — riding under the curl scores fast and bumps the multiplier</li>
+        <li class="done">3D surfer mesh in 80s palette — yaw spins, pitch flips, lean carves all visible</li>
+      </ul>
+
+      <hr class="section-divider">
+      <h3>Arcade loop</h3>
+      <ul>
+        <li class="done">60-second time-attack run with end-of-run summary</li>
+        <li class="done">Combo multiplier x1 → x20 with decay on idle, reset on wipeout</li>
+        <li class="done">Final-wave 2× multiplier in the last 10 seconds (amber tint kicks in)</li>
+        <li class="done">Procedural buoy gates spawn ahead of the surfer; clearing one bumps the combo</li>
+        <li class="done">Score popups — "STOMPED!", "TUBE!", "GATE!", "+360!" floaters in world space</li>
+        <li class="done">Per-wave-config high score — tweak the wave, fresh leaderboard slot</li>
+        <li class="done">Juice — screen shake, slow-mo on lip launches, speed lines, vignettes, WebAudio SFX</li>
       </ul>
 
       <hr class="section-divider">
       <h3>Next up</h3>
       <ul>
-        <li>Tricks: spins, grabs, combos — earned by the line, not a button press</li>
-        <li>Scoring: air height, lip launches, pump chains, clean landings</li>
-        <li>Wave presets as levels — gentle rollers to heavy reef breaks</li>
-        <li>Ghost replays — race your best line</li>
-        <li>Foam, spray, wake trails — make speed visible</li>
-        <li>Custom wave editor — draw your own equation</li>
+        <li>Multi-angle pixel-art surfer (8-frame yaw cycle) — true California Games look</li>
+        <li>Wave-as-level: score-potential preview while editing (avg steepness, tube probability)</li>
+        <li>Ghost replays — race your best line on the same wave config</li>
+        <li>Shareable preset URL hashes — riff on each other's waves</li>
+        <li>Marbles drop button (latent in TODOS.md) — visualize the wave shape</li>
       </ul>
 
     </div>

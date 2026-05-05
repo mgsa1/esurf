@@ -14,16 +14,20 @@ const STORAGE_KEY = 'esurf-params';
  */
 export function getDefaultParams(): WaveParams {
   return {
+    wave1Mode: 'planar',
+    wave1Direction: Math.PI,   // waves rolling in -X direction (toward camera by default)
     amplitude: 3.5,
-    wavelength: 18,
+    wavelength: 22,
     speedFactor: 1.0,
     timeScale: 1,
     gridRes: 80,
     gridExtent: 30,
-    planeOffset: 18,
-    spawnX: 6,
-    spawnY: 18,
+    planeOffset: 0,
+    spawnX: 0,
+    spawnY: 0,
     wave2Enabled: false,
+    wave2Mode: 'radial',
+    wave2Direction: Math.PI / 2,
     wave2OriginX: 0,
     wave2OriginY: -20,
     wave2Amplitude: 2.0,
@@ -59,7 +63,15 @@ export function loadParams(): WaveParams {
       return getDefaultParams();
     }
     // Merge with defaults so new fields added in future versions get values.
-    return { ...getDefaultParams(), ...parsed };
+    const merged = { ...getDefaultParams(), ...parsed };
+    // Coerce mode enums to valid values
+    if (merged.wave1Mode !== 'radial' && merged.wave1Mode !== 'planar') {
+      merged.wave1Mode = 'planar';
+    }
+    if (merged.wave2Mode !== 'radial' && merged.wave2Mode !== 'planar') {
+      merged.wave2Mode = 'radial';
+    }
+    return merged;
   } catch {
     return getDefaultParams();
   }
