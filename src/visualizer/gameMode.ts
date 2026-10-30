@@ -19,7 +19,8 @@
  */
 
 import * as THREE from 'three';
-import { surfaceZ, wave1Z } from '../math/trochoidal';
+import { wave1Z } from '../math/trochoidal';
+import { liveSurfaceZ as surfaceZ } from '../math/liveSurface';
 import { getCamera, getControls, getScene, setTheme } from './renderer3d';
 import { createBoardMesh, setBoardPose, disposeBoardMesh, type BoardSprite } from '../game/board';
 import {

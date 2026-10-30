@@ -8,7 +8,7 @@
  */
 
 import * as THREE from 'three';
-import { surfaceZ } from '../math/trochoidal';
+import { liveSurfaceZ as surfaceZ } from '../math/liveSurface';
 import type { WaveParams } from '../types';
 
 const MAX_ACTIVE = 3;

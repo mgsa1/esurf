@@ -14,7 +14,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { surfaceZ } from '../math/trochoidal';
+import { liveSurfaceZ as surfaceZ } from '../math/liveSurface';
 import type { SurfaceData, WaveParams } from '../types';
 
 // Number of points used to trace the wave profile at y = 0
