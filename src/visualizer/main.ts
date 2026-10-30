@@ -107,12 +107,13 @@ function main() {
     simTime += dt * params.timeScale * gameTimeFactor();
 
     prepareLiveSurface(params, simTime);
-    const surface = sampleSurface(params, simTime, surfaceBuffer, liveZOverride(params, simTime));
-    update(surface, params.gridRes);
 
     if (isGameModeActive()) {
+      // SURF mode draws its own endless, breaking ocean around the rider
       updateGameMode(params, simTime, dt);
     } else {
+      const surface = sampleSurface(params, simTime, surfaceBuffer, liveZOverride(params, simTime));
+      update(surface, params.gridRes);
       updateGamePlane(params, simTime);
       updateOriginMarkers(params, simTime);
       updateWallMarker(params);

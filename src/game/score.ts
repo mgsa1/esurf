@@ -165,7 +165,7 @@ export interface PopupState {
 
 function makePopupSprite(text: string, color: string): THREE.Sprite {
   const canvas = document.createElement('canvas');
-  canvas.width = 256;
+  canvas.width = 512;
   canvas.height = 64;
   const ctx = canvas.getContext('2d')!;
   ctx.font = 'bold 36px "Courier New", monospace';
@@ -174,13 +174,13 @@ function makePopupSprite(text: string, color: string): THREE.Sprite {
   ctx.lineWidth = 5;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.strokeText(text, 128, 32);
-  ctx.fillText(text, 128, 32);
+  ctx.strokeText(text, 256, 32);
+  ctx.fillText(text, 256, 32);
   const tex = new THREE.CanvasTexture(canvas);
   tex.minFilter = THREE.LinearFilter;
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false });
   const sprite = new THREE.Sprite(mat);
-  sprite.scale.set(4, 1, 1);
+  sprite.scale.set(8, 1, 1);
   sprite.renderOrder = 50;
   return sprite;
 }
@@ -242,7 +242,7 @@ export function updatePopups(p: PopupState, dt: number): void {
     const fade = 1 - t;
     (slot.sprite.material as THREE.SpriteMaterial).opacity = fade;
     const scale = 4 + t * 1.5;
-    slot.sprite.scale.set(scale, scale * 0.25, 1);
+    slot.sprite.scale.set(scale * 2, scale * 0.25, 1);
   }
 }
 

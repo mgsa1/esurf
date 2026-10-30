@@ -158,7 +158,7 @@ function createSunSprite(): THREE.Sprite {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 128, 128);
   const tex = new THREE.CanvasTexture(canvas);
-  const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
+  const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, fog: false });
   const sprite = new THREE.Sprite(mat);
   sprite.scale.set(16, 16, 1);
   return sprite;
@@ -220,6 +220,9 @@ export function init(canvas: HTMLCanvasElement): boolean {
   });
 
   const mesh = new THREE.Mesh(meshGeometry, waveMeshMaterial);
+  // Vertices move every frame (and follow the rider in SURF mode); the bounding
+  // sphere computed on first upload goes stale, so never cull the ocean.
+  mesh.frustumCulled = false;
   scene.add(mesh);
 
   // ---- Game plane: semi-transparent XZ plane at y = 0 ----
@@ -364,12 +367,18 @@ function rebuildIndices(gridRes: number): void {
   indexAttr.needsUpdate = true;
 }
 
+// Sunset light direction for slope shading (normalised (0.5, −0.3, 0.8))
+const LIGHT_X = 0.5 / Math.sqrt(0.98);
+const LIGHT_Y = -0.3 / Math.sqrt(0.98);
+const LIGHT_Z = 0.8 / Math.sqrt(0.98);
+
 /**
  * Write new surface data into the pre-allocated buffers.
  * @param surfaceData — Float32Array of [x,y,z,...] interleaved, from sampler.ts
  * @param gridRes     — current grid resolution (to set drawRange correctly)
+ * @param foam        — optional per-vertex whitewater amount (0–1), SURF mode only
  */
-export function update(surfaceData: SurfaceData, gridRes: number): void {
+export function update(surfaceData: SurfaceData, gridRes: number, foam?: Float32Array): void {
   if (!isInitialized) return;
 
   const vertCount = gridRes * gridRes;
@@ -405,9 +414,35 @@ export function update(surfaceData: SurfaceData, gridRes: number): void {
     if (currentTheme === 'sunset') {
       // Trough: dark teal  #1A4035 → [0.10, 0.25, 0.21]
       // Crest:  warm orange #FFA050 → [1.00, 0.63, 0.31]
-      colorBuffer[i * 3    ] = 0.10 + (1.00 - 0.10) * t;  // R: 0.10 → 1.00
-      colorBuffer[i * 3 + 1] = 0.25 + (0.63 - 0.25) * t;  // G: 0.25 → 0.63
-      colorBuffer[i * 3 + 2] = 0.21 + (0.31 - 0.21) * t;  // B: 0.21 → 0.31
+      let r = 0.10 + (1.00 - 0.10) * t;
+      let g = 0.25 + (0.63 - 0.25) * t;
+      let b = 0.21 + (0.31 - 0.21) * t;
+
+      // Slope shading from grid neighbours (layout: x-major, y-minor) so the
+      // face, lip and pocket read in the unlit solid mesh.
+      const xi = (i / gridRes) | 0;
+      const yi = i - xi * gridRes;
+      const ix0 = xi > 0 ? i - gridRes : i, ix1 = xi < gridRes - 1 ? i + gridRes : i;
+      const iy0 = yi > 0 ? i - 1 : i,       iy1 = yi < gridRes - 1 ? i + 1 : i;
+      const dx = positionBuffer[ix1 * 3] - positionBuffer[ix0 * 3] || 1;
+      const dy = positionBuffer[iy1 * 3 + 1] - positionBuffer[iy0 * 3 + 1] || 1;
+      const nx = -(positionBuffer[ix1 * 3 + 2] - positionBuffer[ix0 * 3 + 2]) / dx;
+      const ny = -(positionBuffer[iy1 * 3 + 2] - positionBuffer[iy0 * 3 + 2]) / dy;
+      const nInv = 1 / Math.sqrt(nx * nx + ny * ny + 1);
+      const lambert = Math.max(0, (nx * LIGHT_X + ny * LIGHT_Y + LIGHT_Z) * nInv);
+      const shade = 0.3 + 0.85 * lambert;
+      r *= shade; g *= shade; b *= shade;
+
+      // Whitewater: blend toward warm white #FFF4E0
+      if (foam) {
+        const f = foam[i];
+        r += (1.00 - r) * f;
+        g += (0.96 - g) * f;
+        b += (0.88 - b) * f;
+      }
+      colorBuffer[i * 3    ] = r;
+      colorBuffer[i * 3 + 1] = g;
+      colorBuffer[i * 3 + 2] = b;
     } else {
       // Night (original): near-black #0A0A2A → neon cyan #00FFCC
       colorBuffer[i * 3    ] = 0.04 + (0.00 - 0.04) * t;  // R: 0.04 → 0.00
@@ -517,6 +552,14 @@ export function updateWallMarker(params: WaveParams): void {
   wallPlaneMesh.scale.set(ext * 2, ext * 2, 1);
 }
 
+/** Keep the sunset backdrop (sun, floor grid) centred on the SURF-mode view. */
+export function setSunsetAnchor(x: number, y: number): void {
+  if (!isInitialized) return;
+  sunSprite.position.set(x + 60, y, 14);
+  sunsetGrid.position.x = Math.round(x / 4) * 4;
+  sunsetGrid.position.y = Math.round(y / 4) * 4;
+}
+
 export function getCamera(): THREE.PerspectiveCamera { return camera; }
 export function getControls(): OrbitControls           { return controls; }
 export function getRenderer(): THREE.WebGLRenderer     { return renderer; }
@@ -556,7 +599,7 @@ export function setTheme(theme: Theme): void {
   if (theme === 'sunset') {
     scene.background = sunsetSkyTexture;
     renderer.setClearColor(0xE86A20);
-    scene.fog = new THREE.FogExp2(0xCC6020, 0.015);
+    scene.fog = new THREE.FogExp2(0xCC6020, 0.022);
     waveMeshMaterial.wireframe = false;  // solid ocean surface
     sunsetGrid.visible = true;
     sunSprite.visible = true;
@@ -567,5 +610,7 @@ export function setTheme(theme: Theme): void {
     waveMeshMaterial.wireframe = true;   // restore wireframe for night mode
     sunsetGrid.visible = false;
     sunSprite.visible = false;
+    sunsetGrid.position.set(0, 0, -6);
+    sunSprite.position.set(60, 0, 14);
   }
 }

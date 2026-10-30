@@ -61,22 +61,33 @@ Where crests align you get constructive interference (tall wave). Where a crest 
 
 ## Visualizer SURF mode
 
-The SURF button enters a third-person game mode directly on the 3D wave mesh.
+The SURF button drops you onto the live wave for a 60-second score run.
 
-**State machine:** PADDLING → RIDING → AIRBORNE → WIPEOUT → PADDLING
+In SURF mode every crest **peels**: a break point runs along it and chases you
+down the line (`src/game/breakField.ts`). Just ahead of the curl is the pocket
+(fastest, steepest, tube zone); behind it is whitewater that eats you; far out
+on the shoulder the wave flattens and you bog down. The ocean is endless — the
+mesh follows the rider. The visualizer itself keeps the pure wave math.
+
+**State machine:** RIDING ⇄ AIRBORNE, RIDING → WIPEOUT → drop-in, RIDING → PADDLING (lost the wave) → catch / drop-in
 
 | Key | Action |
 |-----|--------|
-| `A` / `D` | Carve (riding) / spin (air) / rudder (paddling) |
-| `W` | Pump (riding) / paddle (paddling) |
-| `S` | Brake |
-| `Space` | Jump off lip |
-| `R` | Respawn |
+| `A` / `D` | Carve (riding) / spin (air) / steer (paddling) |
+| `W` | Paddle (paddling) / backflip (air) |
+| `S` | Stall (riding) / frontflip (air) |
+| `Shift` | Pump — hold while going downhill to build speed |
+| `Space` | Pop (bigger near the lip) / hold in air to grab |
+| `R` | Drop in on the next wave |
 | `Esc` | Exit surf mode |
 
-Physics: rail-energy model with speed-squared drag, wave face coupling, and pump timing. The wave provides energy; the player times and directs it. Camera follows with spring-damper smoothing and speed-responsive FOV.
+Physics: no motor. The wave carries you while you are on its face and pulls you
+toward a trim speed that is highest in the pocket and on the upper face. Climbing
+through the lip line launches you; the steeper the lip and the faster you hit it,
+the bigger the air. Airs, snaps (hard carve off the lip), cutbacks (on the
+shoulder), tubes and gates bump a combo that drains if you stop scoring.
 
-Entering SURF mode switches to a sunset theme (warm orange sky, solid ocean surface, retro grid floor).
+Entering SURF mode switches to a sunset theme (warm orange sky, shaded ocean with whitewater, retro grid floor).
 
 ---
 
@@ -106,7 +117,7 @@ Entering SURF mode switches to a sunset theme (warm orange sky, solid ocean surf
 
 - **Pre-allocated buffers** — `sampleSurface` writes into a caller-provided `Float32Array`. Zero GC in the hot loop.
 - **BufferAttribute.needsUpdate** — geometry is never rebuilt. Position and color buffers are updated in-place with `DynamicDrawUsage`.
-- **Causal epoch model** — slider changes propagate as expanding wavefronts rather than snapping the whole grid; steady-state path skips the per-point epoch lookup.
+- **Causal epoch model** — slider changes propagate as wavefronts rather than snapping the whole grid: rings from a radial source, a straight front from the up-wave edge for planar waves. The steady-state path skips the per-point epoch lookup.
 - **Debounce** — visualizer debounces recomputes by 50ms when `gridRes > 120`.
 
 ---
@@ -121,11 +132,18 @@ src/
 │   └── params.ts             # localStorage read/write with fallback
 ├── math/
 │   ├── trochoidal.ts         # surfaceZ, wave2Z (combined surface)
+│   ├── liveSurface.ts        # causal epoch model: parameter changes propagate as wavefronts
 │   └── sampler.ts            # 3D grid sampling for visualizer
+├── game/
+│   ├── breakField.ts         # peeling breaks, lip, whitewater (SURF mode surface)
+│   ├── gates.ts              # gates riding on the wave face
+│   ├── score.ts              # score, timed combo window, popups
+│   ├── board.ts              # surfer + board mesh
+│   ├── audio.ts / highscore.ts
 ├── assets/
 │   └── surferSpriteSheet.ts  # Procedural pixel-art board sprite (SURF mode)
 └── visualizer/
-    ├── main.ts               # Visualizer loop, causal epoch model
+    ├── main.ts               # Visualizer loop
     ├── renderer3d.ts         # Three.js scene, mesh, themes
     ├── uiControls.ts         # Slider panel, presets
     └── gameMode.ts           # Third-person SURF mode
