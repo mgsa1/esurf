@@ -11,7 +11,7 @@
  *
  * Controls (locked across all states):
  *   A / D     : carve (yaw) on water, spin (yaw) in air
- *   W / S     : forward thrust / brake on water, pitch (front/back flip) in air
+ *   W / S     : paddle / stall on water, pitch (front/back flip) in air
  *   Shift     : pump (rhythm-timed boost) on water — separate from forward thrust
  *   Space     : jump on water (edge); HOLD in air to grab (50% air-points bonus)
  *   R         : respawn
@@ -442,8 +442,7 @@ function updateRiding(wf: WaveFrame, params: WaveParams, simTime: number, dt: nu
   }
   boardYaw += leanAngle * edgeEngagement * turnRate * dt;
 
-  // Forward thrust / brake (W/S directly affects speed when riding)
-  if (keys.up) speed += 4.0 * dt;
+  // No motor: speed comes from the wave and pumping. S stalls (brake).
   if (keys.down) speed -= 6.0 * dt;
   crouch = lerp(crouch, keys.down ? 1 : (keys.shift ? 0.5 : 0), Math.min(8 * dt, 1));
 
@@ -635,6 +634,8 @@ function updateAirborne(_wf: WaveFrame, params: WaveParams, simTime: number, dt:
     if (alignmentQ > LANDING_CLEAN) {
       bumpCombo(scoreState);
       sfx.comboUp(scoreState.comboLevel);
+      hitStop(trickPoints > 0 ? 0.09 : 0.05);
+      shake(0.35, 0.2);
     }
     spawnPopup(popupState, posX, posY, posZ + 1.5,
       alignmentQ > LANDING_CLEAN ? `STOMPED! +${Math.round(earned)}` : `+${Math.round(earned)}`,
@@ -683,6 +684,7 @@ function triggerWipeout(label: string): void {
   inTube = false;
   sfx.wipeout();
   shake(0.7, 0.5);
+  hitStop(0.12);
   enterState('WIPEOUT');
 }
 
@@ -717,6 +719,11 @@ function enterState(newState: SurfState): void {
 // ============================================================================
 // Camera
 // ============================================================================
+
+/** Freeze the simulation for a few frames to make an impact land. */
+function hitStop(duration: number): void {
+  hitStopTimer = Math.max(hitStopTimer, duration);
+}
 
 function shake(intensity: number, duration: number): void {
   shakeIntensity = Math.max(shakeIntensity, intensity);
@@ -823,6 +830,7 @@ function updateHUD(): void {
   setText('hud-combo', m > 1 ? `x${m}` : '');
   const comboColors = ['#666680', '#00FFCC', '#88FFEE', '#FF6EB4', '#FFB800', '#FF8800', '#FF4488'];
   setStyle('hud-combo', 'color', comboColors[Math.min(scoreState.comboLevel, comboColors.length - 1)]);
+  setStyle('hud-combo-fill', 'width', `${Math.round(scoreState.comboFreshness * 100)}%`);
 
   // Timer
   const seconds = Math.max(0, scoreState.timeRemaining);
@@ -1060,6 +1068,16 @@ export function exitGameMode(): void {
 
 export function isGameModeActive(): boolean { return active; }
 
+/**
+ * Time multiplier for the ocean simulation while in game mode: 0 during
+ * hit-stop, <1 during slow-mo. Keeps the wave in sync with the rider.
+ */
+export function gameTimeFactor(): number {
+  if (!active) return 1;
+  if (hitStopTimer > 0) return 0;
+  return timeStretchTimer > 0 ? timeStretch : 1;
+}
+
 export function respawnPlayer(params: WaveParams, simTime: number): void {
   posX = params.spawnX ?? 0;
   posY = params.spawnY ?? 0;
@@ -1119,10 +1137,7 @@ export function updateGameMode(params: WaveParams, simTime: number, dt: number):
   tickRunTimer(scoreState, dt);
   if (!wasFinalWave && scoreState.finalWaveActive) sfx.timeWarn();
 
-  // Combo decay when not engaged (paddling without progress)
-  const idle = surfState === 'PADDLING' && Math.abs(speed) < 2;
-  decayCombo(scoreState, dt, idle);
-  if (idle) paddleTimer += dt; else paddleTimer = 0;
+  decayCombo(scoreState, dt);
 
   switch (surfState) {
     case 'PADDLING':
@@ -1154,6 +1169,7 @@ export function updateGameMode(params: WaveParams, simTime: number, dt: number):
       spawnBurst(20, 1.2, 0, 1, 0.85);
       scoreState.gatesCleared++;
       shake(0.2, 0.18);
+      hitStop(0.04);
     }
   }
 

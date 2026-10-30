@@ -2,8 +2,10 @@
  * Score, combo, and run state for arcade game mode.
  *
  * - Score accumulates from face riding, tube riding, air time, tricks, and gates.
- * - Combo multiplier (x1 → x2 → x3 → x5 → x8 → x12 → x20) climbs on
- *   trick landings, gate clears, and tube exits. Resets on wipeout.
+ * - Combo multiplier (x1 → x2 → x3 → x4 → x6 → x8 → x10) climbs on
+ *   trick landings, gate clears, and tube exits. Each bump opens a
+ *   COMBO_WINDOW_S window; if it runs out before the next bump, the combo
+ *   drops one tier (and keeps draining). Resets on wipeout.
  * - World-space popup floaters (e.g. "+500 GATE!") are tracked here and
  *   rendered by gameMode.ts as billboard sprites.
  */
@@ -22,7 +24,8 @@ export interface RunSummary {
   prevBest: number;
 }
 
-export const COMBO_TIERS = [1, 2, 3, 5, 8, 12, 20];
+export const COMBO_TIERS = [1, 2, 3, 4, 6, 8, 10];
+export const COMBO_WINDOW_S = 4.0;
 
 export const SCORE_RATES = {
   faceRidePerS: 10,
@@ -33,8 +36,6 @@ export const SCORE_RATES = {
   grabAirBonus: 0.5,           // multiplier on air points while grab held
   cleanLandBase: 200,
   gateClear: 500,
-  paddlingDecayDelayS: 2.0,    // multiplier starts decaying after this long not engaged
-  comboFreezeS: 3.0,           // after a scoring event, combo is "fresh" for this long
 };
 
 export const RUN_DURATION_S = 60;
@@ -47,7 +48,7 @@ export interface ScoreState {
   timeRemaining: number;
   score: number;
   comboLevel: number;        // index into COMBO_TIERS
-  comboFreshness: number;    // 0–1, decays after last scoring event
+  comboFreshness: number;    // 0–1, fraction of the combo window remaining
   bestTrickPoints: number;
   topTrick: string;
   tubeTimeS: number;
@@ -104,15 +105,14 @@ export function addPoints(s: ScoreState, raw: number): number {
   const m = multiplier(s);
   const awarded = raw * m;
   s.score += awarded;
-  s.comboFreshness = 1;
   return awarded;
 }
 
-/** Advance combo by one tier (no-op at max). */
+/** Advance combo by one tier and refresh the window (tier is capped at max). */
 export function bumpCombo(s: ScoreState): boolean {
+  s.comboFreshness = 1;
   if (s.comboLevel >= COMBO_TIERS.length - 1) return false;
   s.comboLevel++;
-  s.comboFreshness = 1;
   return true;
 }
 
@@ -122,16 +122,13 @@ export function breakCombo(s: ScoreState): void {
   s.comboFreshness = 0;
 }
 
-/** Decay combo freshness; triggers a tier drop when fully drained while idle. */
-export function decayCombo(s: ScoreState, dt: number, idle: boolean): void {
-  if (s.runState !== 'running') return;
-  if (s.comboFreshness > 0) {
-    s.comboFreshness = Math.max(0, s.comboFreshness - dt / SCORE_RATES.comboFreezeS);
-  }
-  if (idle && s.comboFreshness <= 0 && s.comboLevel > 0) {
-    // Drop one tier when idle for the full freshness window
-    s.comboLevel = Math.max(0, s.comboLevel - 1);
-    s.comboFreshness = 0.5;
+/** Drain the combo window; drop one tier each time it empties. */
+export function decayCombo(s: ScoreState, dt: number): void {
+  if (s.runState !== 'running' || s.comboLevel === 0) return;
+  s.comboFreshness -= dt / COMBO_WINDOW_S;
+  if (s.comboFreshness <= 0) {
+    s.comboLevel--;
+    s.comboFreshness = s.comboLevel > 0 ? 1 : 0;
   }
 }
 

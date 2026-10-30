@@ -262,9 +262,14 @@
       <div id="hud-combo" style="position:absolute; top:18px; left:50%;
            transform:translateX(-50%); font-size:34px; color:#666680;
            letter-spacing:0.1em; text-shadow:0 0 16px rgba(0,255,204,0.5);"></div>
+      <!-- Combo window: drains between combo events; empty = drop a tier -->
+      <div style="position:absolute; top:58px; left:50%; transform:translateX(-50%);
+                  width:90px; height:3px; background:rgba(255,255,255,0.12);">
+        <div id="hud-combo-fill" style="height:100%; width:0%; background:#FFB800;"></div>
+      </div>
 
       <!-- State label below combo -->
-      <div id="hud-state" style="position:absolute; top:64px; left:50%;
+      <div id="hud-state" style="position:absolute; top:70px; left:50%;
            transform:translateX(-50%); font-size:8px; color:#00FFCC;
            letter-spacing:0.15em; text-shadow:0 0 8px rgba(0,255,204,0.4);">PADDLING</div>
 

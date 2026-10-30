@@ -172,7 +172,7 @@ export function init(canvas: HTMLCanvasElement): boolean {
   try {
     renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
     renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+    renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
     renderer.setClearColor(0x0a0a1a);
   } catch {
     return false;
@@ -322,11 +322,13 @@ export function init(canvas: HTMLCanvasElement): boolean {
   sunSprite.visible = false;
   scene.add(sunSprite);
 
-  // Handle canvas resize
+  // Handle canvas resize. updateStyle=false keeps the CSS 100% sizing; letting
+  // three.js pin a pixel width froze the canvas when the sidebar hid in SURF mode.
   const ro = new ResizeObserver(() => {
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
-    renderer.setSize(w, h);
+    if (w === 0 || h === 0) return;
+    renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   });

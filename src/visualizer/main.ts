@@ -12,7 +12,7 @@ import { loadParams, saveParams } from '../store/params';
 import { sampleSurface } from '../math/sampler';
 import { resetLiveSurface, onParamsChanged, prepareLiveSurface, liveZOverride } from '../math/liveSurface';
 import { init, update, updateGamePlane, updateOriginMarkers, updateWallMarker, render } from './renderer3d';
-import { enterGameMode, exitGameMode, isGameModeActive, updateGameMode, respawnPlayer, restartRun } from './gameMode';
+import { enterGameMode, exitGameMode, isGameModeActive, updateGameMode, respawnPlayer, restartRun, gameTimeFactor } from './gameMode';
 import { getHighScore } from '../game/highscore';
 import { initControls, initTimeControl } from './uiControls';
 import type { WaveParams } from '../types';
@@ -104,7 +104,7 @@ function main() {
     const dt = Math.min((timestamp - lastTimestamp) / 1000, 0.05);
     lastTimestamp = timestamp;
 
-    simTime += dt * params.timeScale;
+    simTime += dt * params.timeScale * gameTimeFactor();
 
     prepareLiveSurface(params, simTime);
     const surface = sampleSurface(params, simTime, surfaceBuffer, liveZOverride(params, simTime));
