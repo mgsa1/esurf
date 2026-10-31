@@ -73,18 +73,20 @@ mesh follows the rider. The visualizer itself keeps the pure wave math.
 
 | Key | Action |
 |-----|--------|
-| `A` / `D` | Carve (riding) / spin (air) / steer (paddling) |
-| `W` | Paddle (paddling) / backflip (air) |
-| `S` | Stall (riding) / frontflip (air) |
+| `A` / `D` | Carve (riding) / steer (air, paddling) |
+| `W` | Front-foot push (riding) / paddle (paddling) / slam down (air) |
+| `S` | Back-foot brake (riding) |
 | `Shift` | Pump — hold while going downhill to build speed |
 | `Space` | Pop (bigger near the lip) / hold in air to grab |
 | `R` | Drop in on the next wave |
 | `Esc` | Exit surf mode |
 
-Physics: no motor. The wave carries you while you are on its face and pulls you
-toward a trim speed that is highest in the pocket and on the upper face. Climbing
-through the lip line launches you; the steeper the lip and the faster you hit it,
-the bigger the air. Airs, snaps (hard carve off the lip), cutbacks (on the
+Physics: the wave carries you while you are on its face and pulls you toward a
+trim speed that is highest in the pocket and on the upper face. W weights the
+front foot for extra drive (capped, so the curl still chases you), S brakes.
+Airs are short and arcade-heavy: only a fast climb through a steep lip launches
+you, A/D steer rather than spin, the board lines itself up with its travel, and
+W in the air slams you back onto the face. Airs, snaps (hard carve off the lip), cutbacks (on the
 shoulder), tubes and gates bump a combo that drains if you stop scoring.
 
 Entering SURF mode switches to a sunset theme (warm orange sky, shaded ocean with whitewater, retro grid floor).

@@ -114,7 +114,7 @@ Font loading: `<link href="https://fonts.googleapis.com/css2?family=Press+Start+
 
 ### SURF mode
 - Press SURF button or `Esc` to toggle.
-- Controls hint shown bottom-right: `A/D CARVE · S STALL · SHIFT PUMP · SPACE POP/GRAB · A/D SPIN · W/S FLIP · R DROP IN · ESC EXIT`.
+- Controls hint shown bottom-right: `A/D CARVE · W PUSH · S BRAKE · SHIFT PUMP · SPACE POP/GRAB · W IN AIR: SLAM DOWN · R DROP IN · ESC EXIT`.
 - Whitewater blends the sunset mesh toward warm white `#FFF4E0`; the mesh is slope-shaded so the face and lip read.
 
 ---

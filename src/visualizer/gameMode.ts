@@ -17,8 +17,8 @@
  *   WIPEOUT   → RIDING:   drop-in onto the next wave
  *
  * Controls:
- *   A / D     : carve on water, spin in air, steer while paddling
- *   W / S     : paddle (paddling) / stall (riding) / flip (air)
+ *   A / D     : carve on water, steer in air, steer while paddling
+ *   W / S     : paddle (paddling) / push & brake (riding) / W slam down (air)
  *   Shift     : pump — hold while going downhill to build speed
  *   Space     : pop (bigger near the lip); HOLD in air to grab
  *   R         : drop in on the next wave
@@ -74,6 +74,9 @@ const TRIM_LOW_PSI = 2.0;            // …none below this one
 const DRAG_FACE  = 0.010;
 const DRAG_FLAT  = 0.030;
 const DRAG_BRAKE = 0.25;
+// ---- Foot pressure (W / S while riding) ----
+const PUSH_ACCEL = 7.0;              // m/s² of drive from weighting the front foot
+const PUSH_MAX_FACTOR = 1.6;         // …only up to this × peel speed
 const DRAG_FOAM  = 0.12;
 const DRAG_BOTTOM = 0.05;
 
@@ -96,16 +99,18 @@ const LOST_TIME = 1.0;
 // ---- Air ----
 const LAUNCH_MIN_VZ = 2.2;           // vertical speed needed to fly off the lip
 const LAUNCH_G = 2.2;                // surface must fall away faster than this × g (extreme speeds only)
-const LIP_LAUNCH_MIN_VZ = 1.0;       // rising at least this fast when crossing the lip line…
-const LIP_LAUNCH_MIN_K = 0.25;       // …on a lip at least this steep = you fly
-const LIP_PROJECT = 0.45;            // fraction of board speed converted to lift off the lip
-const POP_VZ = 2.8;                  // Space pop on flat water
-const LIP_POP_VZ = 5.5;              // extra pop when timed at the lip
+const LIP_LAUNCH_MIN_VZ = 3.0;       // rising at least this fast when crossing the lip line…
+const LIP_LAUNCH_MIN_K = 0.55;       // …on a lip at least this steep = you fly
+const LIP_PROJECT = 0.15;            // fraction of board speed converted to lift off the lip
+const POP_VZ = 2.2;                  // Space pop on flat water
+const LIP_POP_VZ = 3.0;              // extra pop when timed at the lip
+const AIR_GRAVITY = 1.6;             // × g in the air: short, punchy airs
+const AIR_SLAM_GRAVITY = 3.5;        // × g while holding W in the air
+const AIR_STEER_RATE = 1.8;          // rad/s of A/D steering in the air
+const AIR_ALIGN = 4.0;               // 1/s — board eases toward its direction of travel
 const AIR_RETURN = 2.5;              // 1/s — air-assist pulling you back over the face
 const AIR_RETURN_BIAS = 1.0;         // m/s shoreward of the wave, so you come down on the face
-const MAX_LAUNCH_VZ = 9;
-const AIR_YAW_RATE = 7.0;
-const AIR_PITCH_RATE = 6.5;
+const MAX_LAUNCH_VZ = 5.5;
 const LANDING_CLEAN = 0.6;
 const LANDING_WIPEOUT = 0.35;
 
@@ -191,8 +196,6 @@ let velX = 0, velY = 0, velZ = 0;
 // Air rotation tracking
 let airYaw = 0;
 let airPitch = 0;
-let lastSpinMilestone = 0;
-let lastFlipMilestone = 0;
 let grabHeld = false;
 let airStartZ = 0;
 let airPeakZ = 0;
@@ -577,6 +580,10 @@ function updateRiding(wf: WaveFrame, dt: number): void {
   let drag = lerp(DRAG_FLAT, DRAG_FACE, wf.face_q * faceK);
   if (wf.wc.psi > TRIM_LOW_PSI - 0.2) drag = Math.max(drag, DRAG_BOTTOM);   // bogging in the flats
   if (keys.down) drag = DRAG_BRAKE;
+  // Front foot: drive down the line (strongest on the face, capped so the curl stays a threat)
+  if (keys.up && !keys.down && speed < peelSpeed() * PUSH_MAX_FACTOR) {
+    speed += PUSH_ACCEL * Math.max(wf.face_q, 0.3) * dt;
+  }
   if (inFoam) drag = Math.max(drag, DRAG_FOAM);
   speed -= drag * speed * Math.abs(speed) * dt;
   speed = clamp(speed, 0, MAX_SPEED);
@@ -599,7 +606,7 @@ function updateRiding(wf: WaveFrame, dt: number): void {
     // Arcade lip launch: climbing through the lip line projects you off it
     const lipK = lipStrength(wf.d);
     if (prevPsi > LIP_PSI && wf.wc.psi <= LIP_PSI && vzRide > LIP_LAUNCH_MIN_VZ && lipK > LIP_LAUNCH_MIN_K) {
-      launch(vzRide + speed * LIP_PROJECT * lipK + 1.5, wf, lipK > 0.6);
+      launch(vzRide + speed * LIP_PROJECT * lipK + 0.8, wf, lipK > 0.8);
       spawnPopup(popupState, posX, posY, posZ + 1.5, lipK > 0.6 ? 'OFF THE LIP!' : 'AIR!', '#FFCC00');
       return;
     }
@@ -658,7 +665,7 @@ function updateRiding(wf: WaveFrame, dt: number): void {
   if (jumpPressed) {
     jumpPressed = false;
     const lipK = clamp(1 - Math.abs(wf.wc.psi - 0.3) / 0.7, 0, 1) * (vzRide > 1 ? 1 : 0.4);
-    launch(Math.max(vzRide, 0) + POP_VZ + lipK * (LIP_POP_VZ + speed * 0.12), wf, lipK > 0.5);
+    launch(Math.max(vzRide, 0) + POP_VZ + lipK * (LIP_POP_VZ + speed * 0.06), wf, lipK > 0.7);
     return;
   }
 
@@ -716,7 +723,7 @@ function launch(vz: number, wf: WaveFrame, bigPop: boolean): void {
   airPeakZ = posZ;
   spawnBurst(20, 1.0, 1, 1, 1);
   sfx.jump();
-  if (bigPop || vz > 7) {
+  if (bigPop || vz > 5) {
     timeStretch = 0.5;
     timeStretchTimer = 0.45;
     shake(0.3, 0.2);
@@ -728,7 +735,8 @@ function launch(vz: number, wf: WaveFrame, bigPop: boolean): void {
 // ============================================================================
 
 function updateAirborne(params: WaveParams, simTime: number, dt: number): void {
-  velZ -= G * dt;
+  // Heavier than real gravity so airs stay short; W slams you back onto the face
+  velZ -= G * (keys.up ? AIR_SLAM_GRAVITY : AIR_GRAVITY) * dt;
 
   // Air-assist: ease the shoreward velocity toward the wave's own speed so a
   // launch off the lip comes back down on the face instead of over the back.
@@ -739,27 +747,21 @@ function updateAirborne(params: WaveParams, simTime: number, dt: number): void {
   velX += wc.propX * dv;
   velY += wc.propY * dv;
 
-  if (keys.left) airYaw += AIR_YAW_RATE * dt;
-  if (keys.right) airYaw -= AIR_YAW_RATE * dt;
-  if (keys.up) airPitch += AIR_PITCH_RATE * dt;
-  if (keys.down) airPitch -= AIR_PITCH_RATE * dt;
-
-  const spins = Math.floor((Math.abs(airYaw) + 0.35) / TAU);
-  while (spins > lastSpinMilestone) {
-    lastSpinMilestone++;
-    const pts = addPoints(scoreState, SCORE_RATES.spinPer360);
-    spawnPopup(popupState, posX, posY, posZ + 1.5, `${lastSpinMilestone * 360}! +${Math.round(pts)}`, '#FF6EB4');
-    recordTrick(scoreState, `${lastSpinMilestone * 360} SPIN`, pts);
-    sfx.trick();
+  // A/D steer: rotate the heading and the horizontal velocity together
+  const steer = (keys.left ? 1 : 0) - (keys.right ? 1 : 0);
+  if (steer !== 0) {
+    const da = steer * AIR_STEER_RATE * dt;
+    const ca = Math.cos(da), sa = Math.sin(da);
+    const vx = velX;
+    velX = vx * ca - velY * sa;
+    velY = vx * sa + velY * ca;
+    boardYaw += da;
   }
-  const flips = Math.floor((Math.abs(airPitch) + 0.35) / TAU);
-  while (flips > lastFlipMilestone) {
-    lastFlipMilestone++;
-    const pts = addPoints(scoreState, SCORE_RATES.flipPer360);
-    const name = airPitch > 0 ? 'BACKFLIP' : 'FRONTFLIP';
-    spawnPopup(popupState, posX, posY, posZ + 1.5, `${name}! +${Math.round(pts)}`, '#FFB800');
-    recordTrick(scoreState, name, pts);
-    sfx.flip();
+  // The board noses toward where it's going (relative to the water) so landings line up
+  const airCv = crestSpeed() * params.timeScale * carryFactor(wc.psi);
+  const rx = velX - wc.propX * airCv, ry = velY - wc.propY * airCv;
+  if (rx * rx + ry * ry > 1) {
+    boardYaw += wrapAngle(Math.atan2(ry, rx) - boardYaw) * (1 - Math.exp(-AIR_ALIGN * dt));
   }
 
   const surfHere = surfZ(posX, posY);
@@ -795,13 +797,12 @@ function updateAirborne(params: WaveParams, simTime: number, dt: number): void {
     }
 
     const height = airPeakZ - Math.max(airStartZ, zSurface);
-    const trickPoints = lastSpinMilestone * SCORE_RATES.spinPer360 + lastFlipMilestone * SCORE_RATES.flipPer360;
     const clean = alignmentQ > LANDING_CLEAN;
-    const earned = addPoints(scoreState, SCORE_RATES.cleanLandBase + height * 40 + alignmentQ * trickPoints * 0.5);
+    const earned = addPoints(scoreState, SCORE_RATES.cleanLandBase + height * 40);
     if (clean) {
       bumpCombo(scoreState);
       sfx.comboUp(scoreState.comboLevel);
-      hitStop(trickPoints > 0 ? 0.09 : 0.05);
+      hitStop(height > 2 ? 0.08 : 0.05);
       shake(0.35, 0.2);
     }
     spawnPopup(popupState, posX, posY, posZ + 1.5,
@@ -821,7 +822,6 @@ function updateAirborne(params: WaveParams, simTime: number, dt: number): void {
     enterState('RIDING');
     velX = 0; velY = 0; velZ = 0;
     airYaw = 0; airPitch = 0;
-    lastSpinMilestone = 0; lastFlipMilestone = 0;
     return;
   }
 
@@ -876,8 +876,6 @@ function enterState(newState: SurfState): void {
   }
   if (newState === 'AIRBORNE') {
     airYaw = 0; airPitch = 0;
-    lastSpinMilestone = 0;
-    lastFlipMilestone = 0;
     grabHeld = keys.space && !jumpPressed;
   }
 }
